@@ -12,4 +12,6 @@ val akkaDeps : List[ModuleID] = for {
 
 
 libraryDependencies ++= akkaDeps
+
+Revolver.settings
     

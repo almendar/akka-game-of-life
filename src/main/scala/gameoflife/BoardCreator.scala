@@ -103,7 +103,7 @@ class CellActor(position:(Int,Int), neighbours : Neighbours, state : Boolean) ex
 
     case GetToNextEpoche =>
       context.actorOf(Props(classOf[NextStateCellGathererActor],position,myCurrentEpoche,neighbours))
-      if(Random.nextInt() % 100==0) throw new Exception("Random die")
+      if(Random.nextInt() % 1000==0) throw new Exception("Random die")
 
     case GetStateFromEpoche(epoche) =>
       epocheToState.get(epoche) match {
