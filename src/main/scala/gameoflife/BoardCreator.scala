@@ -21,21 +21,20 @@ object NextStateCellGathererActor {
 class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neighbours ) extends Actor with ActorLogging {
   import NextStateCellGathererActor._
 
-  case class GatheredData(epoch : Int, gatheredState : Set[StateForEpoch] = Set.empty, val howManyAnswers :Int) {
+  case class GatheredData(epoch : Epoch, gatheredState : Set[StateForEpoch] = Set.empty, val howManyAnswersShouldThereBe :Int) {
 
-    def needMore : Boolean = gatheredState.size < howManyAnswers
+    def needMore : Boolean = gatheredState.size < howManyAnswersShouldThereBe
 
     def pushNewState(stateToAdd:StateForEpoch) : GatheredData = {
       copy(gatheredState = gatheredState + stateToAdd)
     }
   }
 
-  import NextStateCellGathererActor._
 
-  var gathering :  Option[GatheredData] = None
+  var gatheredData :  GatheredData = null
 
   override def preStart(): Unit = {
-    gathering = Some(GatheredData(epoch = epoch, howManyAnswers = whoToAsk.size))
+    gatheredData = GatheredData(epoch = epoch, howManyAnswersShouldThereBe = whoToAsk.size)
     askForValues
     context.system.scheduler.scheduleOnce(3 seconds,self, Retry)
   }
@@ -50,12 +49,10 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neig
   
   override def receive: Receive = {
     case p @ StateForEpoch(_,_,_) => {
-      gathering = gathering.map(_.pushNewState(p))
-      if (!gathering.map(_.needMore).getOrElse(false)) {
-        val newState : Option[Boolean] = gathering.map {x =>
-          x.gatheredState.map(_.value).foldLeft(0)((acc, value) => if (value) acc + 1 else acc) % 3 == 0
-        }
-        context.parent ! CellActor.SetNewStateMsg(newState.getOrElse(false), epoch+1)
+      gatheredData = gatheredData.pushNewState(p)
+      if (!gatheredData.needMore) {
+        val newState : Boolean = gatheredData.gatheredState.map(_.value).foldLeft(0)((acc, value) => if (value) acc + 1 else acc) % 3 == 0
+        context.parent ! CellActor.SetNewStateMsg(newState, epoch + 1)
         context.stop(self)
       }
     }
@@ -79,9 +76,16 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
   import CellActor._
 
 
+  @throws[Exception](classOf[Exception])
+  override def postRestart(reason: Throwable): Unit = {
+    super.postRestart(reason)
+    log.info("I need to regenerate")
+  }
+
   val previouseEpochWasComputed: (Epoch, History) => Boolean =
     (epoch:Epoch,history:History) => history.contains(epoch-1)
 
+  var waitingForNewState = false
   var globalEpoch : Int = 0
   var epochToState : History = Map(0 -> initialState)
   var enqueuedRequest : List[(ActorSelection,GetStateFromEpoch)] = List.empty
@@ -90,9 +94,9 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
   private def myCurrentEpoch : Epoch = epochToState.keys.max
 
   private def scheduleTransitionToNextepochIfNeeded: Unit = {
-    if (isThisCellBehindGlobalEpoch) self ! GetToNextEpoch
-    if(isMoreThanEpochBehind(2))
-      log.info(s"Regenerating from $myCurrentEpoch to $globalEpoch")
+    if (isThisCellBehindGlobalEpoch && !waitingForNewState) self ! GetToNextEpoch
+//    if(isMoreThanEpochBehind(2))
+//      log.info(s"Regenerating from $myCurrentEpoch to $globalEpoch")
   }
 
   def isMoreThanEpochBehind(distance:Int) : Boolean = {
@@ -100,7 +104,7 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
   }
 
   def `maybeCrashThisCell?`: Unit = {
-    if (Random.nextInt() % 1000 == 0) throw new scala.Exception("Random die")
+    if (Random.nextInt() % 1000 == 0) throw new scala.Exception(s"Random die at state ${myCurrentEpoch} with global $globalEpoch")
   }
 
   override def receive : Receive = {
@@ -110,7 +114,7 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
 
     case GetToNextEpoch =>
       context.actorOf(Props(classOf[NextStateCellGathererActor],position,myCurrentEpoch,neighbours))
-      `maybeCrashThisCell?`
+      waitingForNewState = true
 
     case GetStateFromEpoch(epoch) =>
       epochToState.get(epoch) match {
@@ -125,11 +129,12 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
       val (toBeProcessed,tooNewRequests) = enqueuedRequest.partition {
         case (_,requestEpoch) => requestEpoch.value <= myCurrentEpoch
       }
-
       enqueuedRequest = tooNewRequests
       toBeProcessed.foreach{ case(actor,GetStateFromEpoch(older)) => actor ! NextStateCellGathererActor.StateForEpoch(older,epochToState(older),position) }
       scheduleTransitionToNextepochIfNeeded
-      context.actorSelection("/user/Logger") ! BoardCreator.CellStateMsg(position,state,epoch)
+      context.actorSelection("/user/Logger") ! BoardCreator.CellStateMsg(position,state,myCurrentEpoch)
+      waitingForNewState = false
+      `maybeCrashThisCell?`
     }
   }
 
@@ -176,7 +181,7 @@ class BoardCreator(boardSize : (Int,Int) ) extends Actor with ActorLogging {
 
   override def receive: Receive = {
     case StartSimulation =>
-      simulationSteps = context.system.scheduler.schedule(0 seconds, 1 seconds, self, NextStep)
+      simulationSteps = context.system.scheduler.schedule(0 seconds, 200 microsecond, self, NextStep)
     case PauseSimulation =>
     case StopSimulation =>
     case NextStep =>
@@ -188,9 +193,6 @@ class BoardCreator(boardSize : (Int,Int) ) extends Actor with ActorLogging {
 
 
 object BoardCreator {
-
-
-
   def props(size : BoardSize) : Props = Props(classOf[BoardCreator],size)
 
   case class CellStateMsg(position:Position, state:CellState,epoch:Epoch)
@@ -213,7 +215,7 @@ object Run extends App {
 
 
 
-  val boardSize : BoardSize = (10,10)
+  val boardSize : BoardSize = (2,2)
   def numberOfCells = boardSize._1 * boardSize._2
   val mainBoard = system.actorOf(BoardCreator.props(boardSize),"BoardCreator")
 
@@ -239,10 +241,6 @@ object Run extends App {
       }
     }
   })
-
-
-
-
 
   mainBoard ! StartSimulation
 }
