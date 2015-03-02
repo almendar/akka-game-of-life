@@ -12,4 +12,19 @@ package object gameoflife {
   type CellState = Boolean
   type BoardStateAtTime = List[CellStateMsg]
   type History = Map[Epoch,CellState]
+
+
+  val generateNeighbourAddresses : (BoardSize,Position) => List[Position] = {case ((w,h),(x,y)) =>
+    val moves = List(-1,0,1)
+    for {
+      i <- moves
+      j <- moves
+      newX = i+x
+      newY = j+y
+      if(0 until w contains newX)
+      if(0 until h contains newY)
+      if((newX,newY) != (x,y))
+    } yield (newX,newY)
+  }
+
 }
