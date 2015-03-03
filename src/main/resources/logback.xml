@@ -2,7 +2,8 @@
 
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
         <encoder>
-            <pattern>%date{ISO8601} %-5level %logger{36} %X{sourceThread} - %msg%n</pattern>
+            <!--<pattern>%date{ISO8601} %-5level %logger{36} %X{sourceThread} - %msg%n</pattern>-->
+            <pattern>%msg%n</pattern>
         </encoder>
         <append>false</append>
         <file>info.log</file>

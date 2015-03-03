@@ -17,3 +17,5 @@ libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.0.13"
 
 Revolver.settings
     
+
+fork in run := true

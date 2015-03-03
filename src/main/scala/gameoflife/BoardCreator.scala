@@ -2,7 +2,6 @@ package gameoflife
 
 import akka.actor.SupervisorStrategy.{Resume, Restart}
 import akka.event.LoggingAdapter
-import gameoflife.CellActor.DoCrashMsg
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor._
@@ -20,8 +19,10 @@ object NextStateCellGathererActor {
   case object Retry
 }
 
-class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neighbours ) extends Actor with ActorLogging {
+class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neighbours, currentState : CellState ) extends Actor with ActorLogging {
   import NextStateCellGathererActor._
+
+  var retries = 0;
 
   case class GatheredData(epoch : Epoch, gatheredState : Set[StateForEpoch] = Set.empty, val howManyAnswersShouldThereBe :Int) {
 
@@ -38,7 +39,7 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neig
   override def preStart(): Unit = {
     gatheredData = GatheredData(epoch = epoch, howManyAnswersShouldThereBe = whoToAsk.size)
     askForValues
-    context.system.scheduler.scheduleOnce(3 seconds,self, Retry)
+    context.system.scheduler.scheduleOnce(1 seconds,self, Retry)
   }
 
 
@@ -53,14 +54,31 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neig
     case p @ StateForEpoch(_,_,_) => {
       gatheredData = gatheredData.pushNewState(p)
       if (!gatheredData.needMore) {
-        val newState : Boolean = gatheredData.gatheredState.map(_.value).foldLeft(0)((acc, value) => if (value) acc + 1 else acc) % 3 == 0
+        val aliveNeighbours : Int = gatheredData.gatheredState.map(_.value).foldLeft(0)((acc, value) => if (value) acc + 1 else acc)
+        val newState : Boolean = if(currentState && aliveNeighbours == 3 ) !currentState else currentState
+//          if(currentState == true) {
+//            if(aliveNeighbours < 2) false
+//            else if(aliveNeighbours == 2 || aliveNeighbours == 3) true
+//            else false //if(aliveNeighbours > 3) false
+////            else currentState
+//        } else { //is dead
+//          if(aliveNeighbours == 3) true
+//          else currentState
+//        }
         context.parent ! CellActor.SetNewStateMsg(newState, epoch + 1)
         context.stop(self)
       }
     }
     case Retry =>
-      askForValues
-      context.system.scheduler.scheduleOnce(3 seconds,self, Retry)
+      retries += 1
+      if(retries >= 2) {
+        context.parent ! CellActor.FailedToGatherInfoMsg
+        context.stop(self)
+      }
+      else {
+        askForValues
+        context.system.scheduler.scheduleOnce(1 seconds,self, Retry)
+      }
   }
 }
 
@@ -72,12 +90,11 @@ object CellActor {
   case class SetNewStateMsg(state:CellState,epoch:Epoch)
   case class GetStateForEpochMsg(epoch:Epoch)
   case object DoCrashMsg
-
+  case object FailedToGatherInfoMsg
 
 }
 class CellActor(position:Position, neighbours : Neighbours, initialState : CellState) extends Actor with ActorLogging {
   import CellActor._
-
 
   @throws[Exception](classOf[Exception])
   override def postRestart(reason: Throwable): Unit = {
@@ -97,7 +114,11 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
   private def myCurrentEpoch : Epoch = epochToState.keys.max
 
   private def scheduleTransitionToNextepochIfNeeded: Unit = {
-    if (isThisCellBehindGlobalEpoch && !waitingForNewState) self ! GetToNextEpoch
+    if (isThisCellBehindGlobalEpoch
+      && !waitingForNewState
+    ) {
+      self ! GetToNextEpoch
+    }
 //    if(isMoreThanEpochBehind(2))
 //      log.info(s"Regenerating from $myCurrentEpoch to $globalEpoch")
   }
@@ -107,7 +128,7 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
   }
 
   def crashThisCell: Unit = {
-    throw new scala.Exception(s"Random die at state ${myCurrentEpoch} with global $globalEpoch")
+    throw new scala.Exception(s"Random die of Cell${position}} at state ${myCurrentEpoch} with global $globalEpoch")
   }
 
   override def receive : Receive = {
@@ -116,30 +137,33 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
       scheduleTransitionToNextepochIfNeeded
 
     case GetToNextEpoch =>
-      context.actorOf(Props(classOf[NextStateCellGathererActor],position,myCurrentEpoch,neighbours))
       waitingForNewState = true
+      context.actorOf(Props(classOf[NextStateCellGathererActor], position, myCurrentEpoch, neighbours, epochToState(myCurrentEpoch)))
 
     case GetStateFromEpoch(epoch) =>
       epochToState.get(epoch) match {
         case Some(state) =>
-          sender ! NextStateCellGathererActor.StateForEpoch(epoch,state,position)
+          sender ! NextStateCellGathererActor.StateForEpoch(epoch, state, position)
         case None =>
           enqueuedRequest = (context.actorSelection(sender.path), GetStateFromEpoch(epoch)) :: enqueuedRequest
       }
 
-    case SetNewStateMsg(state,epoch) if(previouseEpochWasComputed(epoch,epochToState)) => {
+    case SetNewStateMsg(state, epoch) if (previouseEpochWasComputed(epoch, epochToState)) => {
       epochToState += (epoch -> state)
-      val (toBeProcessed,tooNewRequests) = enqueuedRequest.partition {
-        case (_,requestEpoch) => requestEpoch.value <= myCurrentEpoch
+      val (toBeProcessed, tooNewRequests) = enqueuedRequest.partition {
+        case (_, requestEpoch) => epochToState.contains(requestEpoch.value)
       }
-      enqueuedRequest = tooNewRequests
-      toBeProcessed.foreach{ case(actor,GetStateFromEpoch(older)) => actor ! NextStateCellGathererActor.StateForEpoch(older,epochToState(older),position) }
       scheduleTransitionToNextepochIfNeeded
-      context.actorSelection("/user/Logger") ! BoardCreator.CellStateMsg(position,state,myCurrentEpoch)
+      enqueuedRequest = tooNewRequests
+      toBeProcessed.foreach { case (actor, GetStateFromEpoch(older)) => actor ! NextStateCellGathererActor.StateForEpoch(older, epochToState(older), position)}
+      context.actorSelection("/user/Logger") ! BoardCreator.CellStateMsg(position, state, myCurrentEpoch)
       waitingForNewState = false
       //`maybeCrashThisCell?`
     }
-    case DoCrashMsg => crashThisCell
+    case FailedToGatherInfoMsg =>
+      waitingForNewState = false
+    case CellActor.DoCrashMsg =>
+        crashThisCell
   }
 
 
@@ -152,6 +176,8 @@ class BoardCreator(boardSize : (Int,Int) ) extends Actor with ActorLogging {
 
   var simulationSteps : Cancellable = null
   var step : Int = 0
+  var howManyCellsHaveICrushed = 0;
+  var howManyCanICrash = 0
 
   override val supervisorStrategy =
     OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
@@ -187,12 +213,17 @@ class BoardCreator(boardSize : (Int,Int) ) extends Actor with ActorLogging {
     children(randomPick)
   }
 
-
+  def crashIfIMay = {
+    if(howManyCellsHaveICrushed < howManyCanICrash) {
+      pickRandomChild ! CellActor.DoCrashMsg
+      howManyCellsHaveICrushed+=1
+    }
+  }
 
   override def receive: Receive = {
     case StartSimulation =>
       simulationSteps = context.system.scheduler.schedule(0 seconds, 1 second, self, NextStep)
-      context.system.scheduler.schedule(0 seconds, 10 seconds)(pickRandomChild ! DoCrashMsg)
+      context.system.scheduler.schedule(1 seconds, 1 seconds){crashIfIMay}
     case PauseSimulation =>
     case StopSimulation =>
     case NextStep =>
@@ -226,7 +257,7 @@ object Run extends App {
 
 
 
-  val boardSize : BoardSize = (5,5)
+  val boardSize : BoardSize = (30,30)
   def numberOfCells = boardSize._1 * boardSize._2
   val mainBoard = system.actorOf(BoardCreator.props(boardSize),"BoardCreator")
 
