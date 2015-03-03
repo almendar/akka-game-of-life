@@ -1,6 +1,8 @@
 package gameoflife
 
-import akka.actor.SupervisorStrategy.Restart
+import akka.actor.SupervisorStrategy.{Resume, Restart}
+import akka.event.LoggingAdapter
+import gameoflife.CellActor.DoCrashMsg
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor._
@@ -69,6 +71,7 @@ object CellActor {
   case class GetStateFromEpoch(value : Int)
   case class SetNewStateMsg(state:CellState,epoch:Epoch)
   case class GetStateForEpochMsg(epoch:Epoch)
+  case object DoCrashMsg
 
 
 }
@@ -103,8 +106,8 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
     globalEpoch - myCurrentEpoch >= distance
   }
 
-  def `maybeCrashThisCell?`: Unit = {
-    if (Random.nextInt() % 1000 == 0) throw new scala.Exception(s"Random die at state ${myCurrentEpoch} with global $globalEpoch")
+  def crashThisCell: Unit = {
+    throw new scala.Exception(s"Random die at state ${myCurrentEpoch} with global $globalEpoch")
   }
 
   override def receive : Receive = {
@@ -134,8 +137,9 @@ class CellActor(position:Position, neighbours : Neighbours, initialState : CellS
       scheduleTransitionToNextepochIfNeeded
       context.actorSelection("/user/Logger") ! BoardCreator.CellStateMsg(position,state,myCurrentEpoch)
       waitingForNewState = false
-      `maybeCrashThisCell?`
+      //`maybeCrashThisCell?`
     }
+    case DoCrashMsg => crashThisCell
   }
 
 
@@ -177,11 +181,18 @@ class BoardCreator(boardSize : (Int,Int) ) extends Actor with ActorLogging {
     }
   }
 
+  def pickRandomChild : ActorRef = {
+    val children = context.children.toList
+    val randomPick = Random.nextInt(children.size)
+    children(randomPick)
+  }
+
 
 
   override def receive: Receive = {
     case StartSimulation =>
-      simulationSteps = context.system.scheduler.schedule(0 seconds, 200 microsecond, self, NextStep)
+      simulationSteps = context.system.scheduler.schedule(0 seconds, 1 second, self, NextStep)
+      context.system.scheduler.schedule(0 seconds, 10 seconds)(pickRandomChild ! DoCrashMsg)
     case PauseSimulation =>
     case StopSimulation =>
     case NextStep =>
@@ -215,13 +226,14 @@ object Run extends App {
 
 
 
-  val boardSize : BoardSize = (2,2)
+  val boardSize : BoardSize = (5,5)
   def numberOfCells = boardSize._1 * boardSize._2
   val mainBoard = system.actorOf(BoardCreator.props(boardSize),"BoardCreator")
 
   val a = actor("Logger")(new Act {
 
     var map : Map[Epoch,BoardStateAtTime] = Map.empty
+    var log : LoggingAdapter = akka.event.Logging(context.system, this)
 
     become {
       case cs @ CellStateMsg(position,cellState,epoch) => {
@@ -234,9 +246,8 @@ object Run extends App {
           val cells = newEntry._2
           val formatedRows : List[String] =
             (0 until y).toList map( getBoardRow(_,cells,boardSize) map cellStateToInts) map getStringReprOsRow
-
-          println(s"At epoch:$epoch")
-          formatedRows.foreach(println)
+          log.info(s"At epoch:$epoch")
+          formatedRows.foreach(log.info)
         }
       }
     }
