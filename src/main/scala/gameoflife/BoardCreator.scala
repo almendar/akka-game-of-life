@@ -223,7 +223,7 @@ class BoardCreator(boardSize : (Int,Int) ) extends Actor with ActorLogging {
   override def receive: Receive = {
     case StartSimulation =>
       simulationSteps = context.system.scheduler.schedule(0 seconds, 1 second, self, NextStep)
-      context.system.scheduler.schedule(1 seconds, 1 seconds){crashIfIMay}
+      context.system.scheduler.schedule(5 seconds, 200 milliseconds){crashIfIMay}
     case PauseSimulation =>
     case StopSimulation =>
     case NextStep =>
@@ -257,7 +257,7 @@ object Run extends App {
 
 
 
-  val boardSize : BoardSize = (30,30)
+  val boardSize : BoardSize = (10,10)
   def numberOfCells = boardSize._1 * boardSize._2
   val mainBoard = system.actorOf(BoardCreator.props(boardSize),"BoardCreator")
 
@@ -278,7 +278,9 @@ object Run extends App {
           val formatedRows : List[String] =
             (0 until y).toList map( getBoardRow(_,cells,boardSize) map cellStateToInts) map getStringReprOsRow
           log.info(s"At epoch:$epoch")
+          log.info("-"*(x*2+1))
           formatedRows.foreach(log.info)
+          log.info("-"*(x*2+1) + "\n")
         }
       }
     }
