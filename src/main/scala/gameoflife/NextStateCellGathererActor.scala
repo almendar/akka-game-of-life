@@ -1,26 +1,25 @@
 package gameoflife
 
-import akka.actor.{ActorLogging, Actor}
+import akka.actor.{Props, ActorRef, ActorLogging, Actor}
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import NextStateCellGathererActor._
+
 /**
  * Created by tomaszk on 3/9/15.
  */
-class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neighbours, currentState : CellState ) extends Actor with ActorLogging {
-  import NextStateCellGathererActor._
 
-  var retries = 0;
+case class GatheredData(epoch : Epoch, gatheredState : Set[StateForEpoch] = Set.empty, val howManyAnswersShouldThereBe :Int) {
 
-  case class GatheredData(epoch : Epoch, gatheredState : Set[StateForEpoch] = Set.empty, val howManyAnswersShouldThereBe :Int) {
+  def needMore : Boolean = gatheredState.size < howManyAnswersShouldThereBe
 
-    def needMore : Boolean = gatheredState.size < howManyAnswersShouldThereBe
-
-    def pushNewState(stateToAdd:StateForEpoch) : GatheredData = {
-      copy(gatheredState = gatheredState + stateToAdd)
-    }
+  def pushNewState(stateToAdd:StateForEpoch) : GatheredData = {
+    copy(gatheredState = gatheredState + stateToAdd)
   }
+}
 
-
+class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Set[ActorRef], currentState : CellState ) extends Actor with ActorLogging {
+  var retries = 0;
   var gatheredData :  GatheredData = null
 
   override def preStart(): Unit = {
@@ -31,9 +30,8 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neig
 
 
   def askForValues: Unit = {
-    whoToAsk.foreach { case (i, j) =>
-      val selection = context.actorSelection(s"/user/BoardCreator/Cell-$i,$j")
-      selection ! CellActor.GetStateFromEpoch(epoch)
+    whoToAsk.foreach {
+      _ ! CellActor.GetStateFromEpoch(epoch)
     }
   }
 
@@ -43,15 +41,6 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neig
       if (!gatheredData.needMore) {
         val aliveNeighbours : Int = gatheredData.gatheredState.map(_.value).foldLeft(0)((acc, value) => if (value) acc + 1 else acc)
         val newState : Boolean = if(currentState && aliveNeighbours == 3 ) !currentState else currentState
-//          if(currentState == true) {
-//            if(aliveNeighbours < 2) false
-//            else if(aliveNeighbours == 2 || aliveNeighbours == 3) true
-//            else false //if(aliveNeighbours > 3) false
-////            else currentState
-//        } else { //is dead
-//          if(aliveNeighbours == 3) true
-//          else currentState
-//        }
         context.parent ! CellActor.SetNewStateMsg(newState, epoch + 1)
         context.stop(self)
       }
@@ -70,6 +59,7 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Neig
 }
 
 object NextStateCellGathererActor {
+  def props(position : Position, epoch:Epoch, whoToAsk:Set[ActorRef], currentState : CellState) = Props(classOf[NextStateCellGathererActor],position,epoch,whoToAsk,currentState)
   case class GatherForEpoch(epoch : Epoch, neighbours : Neighbours)
   case class StateForEpoch(epoch:Epoch, value:CellState, position : Position)
   case object Retry
