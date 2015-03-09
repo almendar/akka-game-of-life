@@ -27,4 +27,8 @@ package object gameoflife {
     } yield (newX,newY)
   }
 
+  val getBoardRow : (Int,BoardStateAtTime,BoardSize) => List[CellStateMsg] = (row,board,boardSize) => board.slice(row * boardSize._1, (row+1) * boardSize._1)
+  val cellStateToInts : (CellStateMsg) => Int = cellState => if(cellState.state) 1 else 0
+  val getStringReprOsRow : (List[Int]) => String = cells => cells.mkString("[",",","]")
+
 }
