@@ -39,7 +39,8 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Set[
     case p @ StateForEpoch(_,_,_) => {
       gatheredData = gatheredData.pushNewState(p)
       if (!gatheredData.needMore) {
-        val aliveNeighbours : Int = gatheredData.gatheredState.map(_.value).foldLeft(0)((acc, value) => if (value) acc + 1 else acc)
+        val aliveNeighbours : Int = gatheredData.gatheredState.map(_.value)
+          .foldLeft(0)((acc, value) => if (value) acc + 1 else acc)
         val newState : Boolean = if(currentState && aliveNeighbours == 3 ) !currentState else currentState
         context.parent ! CellActor.SetNewStateMsg(newState, epoch + 1)
         context.stop(self)
@@ -59,7 +60,8 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Set[
 }
 
 object NextStateCellGathererActor {
-  def props(position : Position, epoch:Epoch, whoToAsk:Set[ActorRef], currentState : CellState) = Props(classOf[NextStateCellGathererActor],position,epoch,whoToAsk,currentState)
+  def props(position : Position, epoch:Epoch, whoToAsk:Set[ActorRef], currentState : CellState) =
+    Props(classOf[NextStateCellGathererActor],position,epoch,whoToAsk,currentState)
   case class GatherForEpoch(epoch : Epoch, neighbours : Neighbours)
   case class StateForEpoch(epoch:Epoch, value:CellState, position : Position)
   case object Retry

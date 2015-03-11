@@ -7,21 +7,24 @@ import scala.util.Random
 /**
  * Created by tomaszk on 3/9/15.
  */
-class CellActor(position:Position, initialState : CellState) extends Actor with ActorLogging {
+class CellActor(position:Position, initialState : CellState, val loggerRef:ActorRef) extends Actor with ActorLogging {
   import CellActor._
+
+
+  @throws[Exception](classOf[Exception])
+  override def preStart(): Unit = {
+    super.preStart()
+    println(s"Cell${position}: I'm alive")
+  }
 
   @throws[Exception](classOf[Exception])
   override def postRestart(reason: Throwable): Unit = {
     super.postRestart(reason)
-    log.info("I need to regenerate")
     context.parent ! BoardCreator.SendMeMyNeighbours(position)
+    println(s"Cell${position}: I've restarted")
   }
 
 
-  @throws[Exception](classOf[Exception])
-  override def preRestart(reason: Throwable, message: Option[Any]): Unit = {
-    super.preRestart(reason, message)
-  }
 
   val previouseEpochWasComputed: (Epoch, History) => Boolean =
     (epoch:Epoch,history:History) => history.contains(epoch-1)
@@ -37,12 +40,10 @@ class CellActor(position:Position, initialState : CellState) extends Actor with 
 
   private def scheduleTransitionToNextepochIfNeeded: Unit = {
     if (isThisCellBehindGlobalEpoch
-//      && !waitingForNewState
+      && !waitingForNewState
     ) {
       self ! GetToNextEpoch
     }
-//    if(isMoreThanEpochBehind(2))
-//      log.info(s"Regenerating from $myCurrentEpoch to $globalEpoch")
   }
 
   def isMoreThanEpochBehind(distance:Int) : Boolean = {
@@ -55,12 +56,10 @@ class CellActor(position:Position, initialState : CellState) extends Actor with 
 
   def receive : Receive = {
     case NeighboursRefs(actors) =>
+      neighboursRefs.foreach(context.unwatch(_))
       neighboursRefs = actors.toSet
       neighboursRefs.foreach(context.watch(_))
-      context.become(simulation)
-  }
 
-  def simulation : Receive = {
     case CurrentEpochMsg(number) =>
       globalEpoch = number
       scheduleTransitionToNextepochIfNeeded
@@ -78,15 +77,16 @@ class CellActor(position:Position, initialState : CellState) extends Actor with 
       }
 
     case SetNewStateMsg(state, epoch) if previouseEpochWasComputed(epoch, epochToState) => {
+      println(s"Cell${position}: Changing state ${epochToState(myCurrentEpoch)} -> $state")
       epochToState += (epoch -> state)
       val (toBeProcessed, tooNewRequests) = enqueuedRequest.partition {
         case (_, requestEpoch) => epochToState.contains(requestEpoch.value)
       }
+      waitingForNewState = false
       scheduleTransitionToNextepochIfNeeded
       enqueuedRequest = tooNewRequests
       toBeProcessed.foreach { case (actor, GetStateFromEpoch(older)) => actor ! NextStateCellGathererActor.StateForEpoch(older, epochToState(older), position)}
-      context.actorSelection("/user/Logger") ! BoardCreator.CellStateMsg(position, state, myCurrentEpoch)
-      waitingForNewState = false
+      loggerRef ! BoardCreator.CellStateMsg(position, state, myCurrentEpoch)
       //`maybeCrashThisCell?`
     }
     case FailedToGatherInfoMsg =>
@@ -94,9 +94,7 @@ class CellActor(position:Position, initialState : CellState) extends Actor with 
       context.parent ! BoardCreator.SendMeMyNeighbours(position)
     case CellActor.DoCrashMsg =>
         crashThisCell
-
     case Terminated(actorRef) =>
-      context.unbecome()
   }
 
 
