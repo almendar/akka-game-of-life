@@ -4,10 +4,7 @@
 	<head>
 		<meta charset="utf-8">
 
-		<title>reveal.js - The HTML Presentation Framework</title>
-
-		<meta name="description" content="A framework for easily creating beautiful presentations using HTML">
-		<meta name="author" content="Hakim El Hattab">
+		<title>AKKA cluster for scalania</title>
 
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -15,7 +12,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
 
 		<link rel="stylesheet" href="css/reveal.css">
-		<link rel="stylesheet" href="css/theme/black.css" id="theme">
+		<link rel="stylesheet" href="css/theme/sky.css" id="theme">
 
 		<!-- Code syntax highlighting -->
 		<link rel="stylesheet" href="lib/css/zenburn.css">
@@ -41,339 +38,293 @@
 			<!-- Any section element inside of this container is displayed as a slide -->
 			<div class="slides">
 				<section>
-					<h1>Reveal.js</h1>
-					<h3>The HTML Presentation Framework</h3>
+					<h1>AKKA Cluster</h1>
+					<h3>Warsaw Scala Enthusiasts Meetup</h3>
 					<p>
-						<small>Created by <a href="http://hakim.se">Hakim El Hattab</a> / <a href="http://twitter.com/hakimel">@hakimel</a></small>
+						<small>By Tomasz Kogut / <a href="http://twitter.com/almendar">@almendar</a></small>
 					</p>
-					<p>Dude</p>
-					<ul>
-					<li>f</li>
-					<li>f</li>
-					</ul>
-
+					<p>2015.03.18</p> 
 				</section>
-
-				<section>
-					<object data="images/circle.svg" type="image/svg+xml"> </object>
-				</section>
-
-				<!-- Example of nested vertical slides -->
 				<section>
 					<section>
-						<h2>Vertical Slides</h2>
-						<p>Slides can be nested inside of each other.</p>
-						<p>Use the <em>Space</em> key to navigate through all slides.</p>
-						<br>
-						<a href="#" class="navigate-down">
-							<img width="178" height="238" data-src="https://s3.amazonaws.com/hakim-static/reveal-js/arrow.png" alt="Down arrow">
-						</a>
+						<h3>What a <i>'cluster'</i> means in terms of AKKA?</h2>
+						<p class="fragment">A set of nodes with a membership service</p>
+						<p class="fragment">AKKA clustering is NOT about <b>fail-over</b> or <b>replication</b>
 					</section>
 					<section>
-						<h2>Basement Level 1</h2>
-						<p>Nested slides are useful for adding additional detail underneath a high level horizontal slide.</p>
+						<h3>Spread your AKKA application across multiple machines</h3>
+						<object data="img/1.svg" type="image/svg+xml"></object>
+					</section>
+				</section>
+				<section>
+					<section>
+						<h2>How does it works?</h2>
+						<ul>
+							<li>Gossip protocol used to propagate information about membership</li>
+							<li>One of the nodes takes the role of the leader - shifts nodes in&amp;out of the cluster</li>
+							<li>Nodes are always in some state:</li>
+						</ul>
 					</section>
 					<section>
-						<h2>Basement Level 2</h2>
-						<p>That's it, time to go back up.</p>
-						<br>
-						<a href="#/2">
-							<img width="178" height="238" data-src="https://s3.amazonaws.com/hakim-static/reveal-js/arrow.png" alt="Up arrow" style="-webkit-transform: rotate(180deg);">
-						</a>
-					</section>
-				</section>
-
-				<section>
-					<h2>Slides</h2>
-					<p>
-						Not a coder? Not a problem. There's a fully-featured visual editor for authoring these, try it out at <a href="http://slides.com" target="_blank">http://slides.com</a>.
-					</p>
-				</section>
-
-				<section>
-					<h2>Point of View</h2>
-					<p>
-						Press <strong>ESC</strong> to enter the slide overview.
-					</p>
-					<p>
-						Hold down alt and click on any element to zoom in on it using <a href="http://lab.hakim.se/zoom-js">zoom.js</a>. Alt + click anywhere to zoom back out.
-					</p>
-				</section>
-
-				<section>
-					<h2>Touch Optimized</h2>
-					<p>
-						Presentations look great on touch devices, like mobile phones and tablets. Simply swipe through your slides.
-					</p>
-				</section>
-
-				<section data-markdown>
-					<script type="text/template">
-						## Markdown support
-
-						Write content using inline or external Markdown.
-						Instructions and more info available in the [readme](https://github.com/hakimel/reveal.js#markdown).
-
-						```
-						<section data-markdown>
-						  ## Markdown support
-
-						  Write content using inline or external Markdown.
-						  Instructions and more info available in the [readme](https://github.com/hakimel/reveal.js#markdown).
-						</section>
-						```
-					</script>
-				</section>
-
-				<section>
-					<section id="fragments">
-						<h2>Fragments</h2>
-						<p>Hit the next arrow...</p>
-						<p class="fragment">... to step through ...</p>
-						<p class="fragment"><object data="images/circle.svg" type="image/svg+xml"> </object></p>
-						<p><span class="fragment">... a</span> <span class="fragment">fragmented</span> <span class="fragment">slide.</span></p>
-
-						<aside class="notes">
-							This slide has fragments which are also stepped through in the notes window.
-						</aside>
+						<p>Leader changes the nodes state</p>
+						<img src="img/member-states.png"/>
+						<p>Only state that can be recovered from is 'unreachable'</p>
+						<p>If you go out there is no commin' back!</p>
 					</section>
 					<section>
-						<h2>Fragment Styles</h2>
-						<p>There's different types of fragments, like:</p>
-						<p class="fragment grow">grow</p>
-						<p class="fragment shrink">shrink</p>
-						<p class="fragment roll-in">roll-in</p>
-						<p class="fragment fade-out">fade-out</p>
-						<p class="fragment current-visible">current-visible</p>
-						<p class="fragment highlight-red">highlight-red</p>
-						<p class="fragment highlight-blue">highlight-blue</p>
+						<h3>Failure detection</h3>
+						<p>In case any of the nodes becomes unreachable convergence is not possible</p>
+						<ul>
+							<li>No new nodes can join the cluster</li>
+							<li>
+								Problematic node may:
+								<ul>
+									<li>be detected as reachable again so the cluster can proceed</li>
+									<li>be removed by the leader by setting auto-down option after set interval</li>
+								</ul>
+							</li>
+							<li>
+								Auto removal of unreachable nodes may cause creation of many little clusters.
+							</li>
+						</ul>
 					</section>
 				</section>
-
-				<section id="transitions">
-					<h2>Transition Styles</h2>
-					<p>
-						You can select from different transitions, like: <br>
-						<a href="?transition=none#/transitions">None</a> -
-						<a href="?transition=fade#/transitions">Fade</a> -
-						<a href="?transition=slide#/transitions">Slide</a> -
-						<a href="?transition=convex#/transitions">Convex</a> -
-						<a href="?transition=concave#/transitions">Concave</a> -
-						<a href="?transition=zoom#/transitions">Zoom</a>
-					</p>
-				</section>
-
-				<section id="themes">
-					<h2>Themes</h2>
-					<p>
-						reveal.js comes with a few themes built in: <br>
-						<!-- Hacks to swap themes after the page has loaded. Not flexible and only intended for the reveal.js demo deck. -->
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/black.css'); return false;">Black (default)</a> -
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/white.css'); return false;">White</a> -
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/league.css'); return false;">League</a> -
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/sky.css'); return false;">Sky</a> -
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/beige.css'); return false;">Beige</a> -
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/simple.css'); return false;">Simple</a> <br>
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/serif.css'); return false;">Serif</a> -
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/night.css'); return false;">Night</a> -
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/moon.css'); return false;">Moon</a> -
-						<a href="#" onclick="document.getElementById('theme').setAttribute('href','css/theme/solarized.css'); return false;">Solarized</a>
-					</p>
-				</section>
-
 				<section>
-					<section data-background="#dddddd">
-						<h2>Slide Backgrounds</h2>
-						<p>
-							Set <code>data-background="#dddddd"</code> on a slide to change the background color. All CSS color formats are supported.
-						</p>
-						<a href="#" class="navigate-down">
-							<img width="178" height="238" data-src="https://s3.amazonaws.com/hakim-static/reveal-js/arrow.png" alt="Down arrow">
-						</a>
+					<section>
+						<h2>Preparing your project for clustering</h2>
 					</section>
-					<section data-background="https://s3.amazonaws.com/hakim-static/reveal-js/image-placeholder.png">
-						<h2>Image Backgrounds</h2>
-						<pre><code>&lt;section data-background="image.png"&gt;</code></pre>
-					</section>
-					<section data-background="https://s3.amazonaws.com/hakim-static/reveal-js/image-placeholder.png" data-background-repeat="repeat" data-background-size="100px">
-						<h2>Tiled Backgrounds</h2>
-						<pre><code style="word-wrap: break-word;">&lt;section data-background="image.png" data-background-repeat="repeat" data-background-size="100px"&gt;</code></pre>
-					</section>
-					<section data-background-video="https://s3.amazonaws.com/static.slid.es/site/homepage/v1/homepage-video-editor.mp4,https://s3.amazonaws.com/static.slid.es/site/homepage/v1/homepage-video-editor.webm" data-background-color="#000000">
-						<div style="background-color: rgba(0, 0, 0, 0.9); color: #fff; padding: 20px;">
-							<h2>Video Backgrounds</h2>
-							<pre><code style="word-wrap: break-word;">&lt;section data-background-video="video.mp4,video.webm"&gt;</code></pre>
-						</div>
-					</section>
+					<section>
+							<p>dependencies</p>
+							<pre><code>"com.typesafe.akka" %% "akka-cluster" % "x.x.x"</code></pre>
+							<p>application.conf</p>
+							<pre><code data-trim contenteditable>
+akka {
+	actor { provider = "akka.cluster.ClusterActorRefProvider" }
+	remote {
+		log-remote-lifecycle-events = off
+		netty.tcp {
+			hostname = "ipa_adrress"
+			port = 0
+		}
+	}
+	cluster {
+		seed-nodes = [
+			"akka.tcp://ClusterSystem@machine1:2551",
+			"akka.tcp://ClusterSystem@machine2:2552"]
+		auto-down-unreachable-after = 10s
+	}
+}
+		    				</code></pre>
+	    			</section>
+	    			<section>
+	    				<h3>Changes</h3>
+	    				<ul>
+	    					<li>Actor ref provider - it is smart</li>
+	    					<li>Seed nodes - any will do</li>
+	    					<li>Network address to bind </li>
+	    				</ul>
+	    			</section>
 				</section>
-
-				<section data-transition="slide" data-background="#4d7e65" data-background-transition="zoom">
-					<h2>Background Transitions</h2>
-					<p>
-						Different background transitions are available via the backgroundTransition option. This one's called "zoom".
-					</p>
-					<pre><code>Reveal.configure({ backgroundTransition: 'zoom' })</code></pre>
-				</section>
-
-				<section data-transition="slide" data-background="#b5533c" data-background-transition="zoom">
-					<h2>Background Transitions</h2>
-					<p>
-						You can override background transitions per-slide.
-					</p>
-					<pre><code style="word-wrap: break-word;">&lt;section data-background-transition="zoom"&gt;</code></pre>
-				</section>
-
 				<section>
-					<h2>Pretty Code</h2>
-					<pre><code data-trim contenteditable>
-function linkify( selector ) {
-  if( supports3DTransforms ) {
+					<section>
+						<h2>Making use of akka cluster</h2>
+					</section>
+					<section>
+						<h3>Some actors need to be made aware of the cluster</h3>
+						<ul>
+							<li>In most cases there will be nothing specific to clustering in you're code</li>
+							<li>Distribution of actors isn't automagical</li>
+							<li>Try to separate how work is distributed from how the work is done</li>
+						</ul>
+					</section>
+					<section>
+					<h3>Listening for cluster events</h3>
+						<pre><code>
+class SimpleClusterListener extends Actor with ActorLogging {
+	val cluster = Cluster(context.system)
 
-    var nodes = document.querySelectorAll( selector );
-
-    for( var i = 0, len = nodes.length; i &lt; len; i++ ) {
-      var node = nodes[i];
-
-      if( !node.className ) {
-        node.className += ' roll';
+	override def preStart(): Unit = {
+		cluster.subscribe(self, initialStateMode = 
+		InitialStateAsEvents,
+		classOf[MemberEvent], classOf[UnreachableMember])
+	}
+	override def postStop(): Unit = cluster.unsubscribe(self)
+	def receive = {
+		case MemberUp(member) =>
+		case UnreachableMember(member) =>
+		case MemberRemoved(member, previousStatus) =>
+		case _: MemberEvent => // ignore
+	}
+}
+						</code></pre>
+					</section>
+					<section>
+						<h4>Making use of members information</h4>
+						<br/>
+						<p>Selecting remote actor</p>
+						<pre><code>context.actorSelection(RootActorPath(member.address) 
+						/ "user" / "frontend")</code></pre>
+						<p>Creating actor on a remote node</p>
+						<pre><code>
+system.actorOf(Props[SampleActor]
+	.withDeploy(Deploy(scope = RemoteScope(member.address))))
+						</code></pre>
+						<p>Using remote actorRefs</p>
+						<pre><code>
+actorRef ! "message" //transparent if acquired properly
+						</code></pre>
+					</section>
+					<section>
+						<h3>How to acquire an ActorRef?</h3>
+						<ul>
+							<li>Get it sent with a message</li>
+							<li>Using actor selection
+								<pre><code>def resolveOne(timeout: FiniteDuration): Future[ActorRef]</code></pre>
+							</li>
+							<li>Using context methods
+								<pre><code>
+val parent : ActorRef = context.parent
+val children: Iterable[ActorRef] = context.children
+							</code></li>
+						</ul>
+						<p>Don't use local selection paths. They are missing the address part</p>
+						<pre><code>context.actorSelection("/user/actorName") //won't work</code></pre>
+					</section>
+				</section>
+				<section>
+					<section>
+						<h2>Goodies</h2>
+					</section>
+					<section>
+						<h3>Death watch</h3>
+						<p>Works the same way as it would in a non-cluster mode</p>
+					</section>
+					<section>
+						<h3>Configuration deployment</h3>
+						<pre><code>
+akka {
+  actor {
+    deployment {
+	  /sampleActor {
+        remote = "akka.tcp://sampleActorSystem@127.0.0.1:2553"
       }
     }
   }
 }
-					</code></pre>
-					<p>Code syntax highlighting courtesy of <a href="http://softwaremaniacs.org/soft/highlight/en/description/">highlight.js</a>.</p>
+						</code></pre>
+						<pre><code>
+    val actor = system.actorOf(Props[SampleActor], "sampleActor")
+    actor ! "Pretty slick"
+    					</code></pre>
+    					<p>Remember that jar with that class is needed</p>
+					</section>
+					<section>
+						<h3>Minimum cluster size</h3>
+						<pre><code>akka.cluster.min-nr-of-members = 3</code></pre>
+					</section>
+					<section>
+						<h3>Roles</h3>
+						<ul>
+							<li>A way to split your servers into different tasks (e.g. UI, data access layer, number cruncher)</li>
+							<li>Any node can connect and claim what its role is</li>
+							<li>This information is available in member events</li>
+							<br/>
+							<pre><code>akka.cluster.roles = [compute]</code></pre>
+							<pre><code>
+override def receive: Receive = {
+  case MemberUp(member) if(member.hasRole("compute")) => 
+  (...)
+}
+							</code></pre>
+						</ul>
+					</section>
+					<section>
+						<h3>Minimum cluster size with roles</h3>
+						<pre><code>
+akka.cluster.role {
+  frontend.min-nr-of-members = 1
+  backend.min-nr-of-members = 2
+}
+						</code></pre>
+					</section>
+					<section>
+						<h3>External contributions</h3>
+						<ul>
+							<li>Cluster Singleton</li>
+							<li>Cluster Sharding</li>
+							<li>Distributed Publish Subscribe</li>
+							<li>Cluster Client</li>
+						</ul>
+					</section>
 				</section>
-
 				<section>
-					<h2>Marvelous List</h2>
+					<section>
+						<h3>Cluster-aware routers</h3>
+						<ul>
+							<li>Group - router that sends messages to the specified path using actor selection</li>
+							<li>Pool - router that creates routees as child actors and deploys them on remote nodes</li>
+						</ul>
+					</section>
+					<section>
+						<h3>Pool router</h3>
+						<pre><code>
+akka.actor.deployment {
+  /statsService/workerRouter {
+    router = consistent-hashing-group
+    nr-of-instances = 100
+    routees.paths = ["/user/statsWorker"]
+    cluster {
+      enabled = on
+      allow-local-routees = on
+      use-role = compute
+    }
+  }
+}
+</code></pre>
+					</section>
+					<section>
+						<h3>Group router</h3>
+						<pre><code>
+akka.actor.deployment {
+  /singleton/statsService/workerRouter {
+  router = consistent-hashing-pool
+  nr-of-instances = 100
+  cluster {
+    enabled = on
+    max-nr-of-instances-per-node = 3
+    allow-local-routees = on
+    use-role = compute
+  }
+ }
+}
+						</code></pre>
+					</section>
+				</section>
+				<section>
+					<h3>How akka remoting and clustering relate?</h3>
 					<ul>
-						<li>No order here</li>
-						<li>Or here</li>
-						<li>Or here</li>
-						<li>Or here</li>
+						<li>Remoting is responsible for all the plumbing that takes care of network communication.</li>
+						<li>akka-cluster is build on top of it</li>
+						<li>There is probably no need to use remoting directly</li>
 					</ul>
 				</section>
-
 				<section>
-					<h2>Fantastic Ordered List</h2>
-					<ol>
-						<li>One is smaller than...</li>
-						<li>Two is smaller than...</li>
-						<li>Three!</li>
-					</ol>
-				</section>
-
-				<section>
-					<h2>Tabular Tables</h2>
-					<table>
-						<thead>
-							<tr>
-								<th>Item</th>
-								<th>Value</th>
-								<th>Quantity</th>
-							</tr>
-						</thead>
-						<tbody>
-							<tr>
-								<td>Apples</td>
-								<td>$1</td>
-								<td>7</td>
-							<tr>
-							<tr>
-								<td>Lemonade</td>
-								<td>$2</td>
-								<td>18</td>
-							<tr>
-							<tr>
-								<td>Bread</td>
-								<td>$3</td>
-								<td>2</td>
-							<tr>
-						</tbody>
-					</table>
-				</section>
-
-				<section>
-					<h2>Clever Quotes</h2>
-					<p>
-						These guys come in two forms, inline: <q cite="http://searchservervirtualization.techtarget.com/definition/Our-Favorite-Technology-Quotations">
-						&ldquo;The nice thing about standards is that there are so many to choose from&rdquo;</q> and block:
-					</p>
-					<blockquote cite="http://searchservervirtualization.techtarget.com/definition/Our-Favorite-Technology-Quotations">
-						&ldquo;For years there has been a theory that millions of monkeys typing at random on millions of typewriters would
-						reproduce the entire works of Shakespeare. The Internet has proven this theory to be untrue.&rdquo;
-					</blockquote>
-				</section>
-
-				<section>
-					<h2>Intergalactic Interconnections</h2>
-					<p>
-						You can link between slides internally,
-						<a href="#/2/3">like this</a>.
-					</p>
-				</section>
-
-				<section>
-					<h2>Speaker View</h2>
-					<p>There's a <a href="https://github.com/hakimel/reveal.js#speaker-notes">speaker view</a>. It includes a timer, preview of the upcoming slide as well as your speaker notes.</p>
-					<p>Press the <em>S</em> key to try it out.</p>
-
-					<aside class="notes">
-						Oh hey, these are some notes. They'll be hidden in your presentation, but you can see them if you open the speaker notes window (hit 's' on your keyboard).
-					</aside>
-				</section>
-
-				<section>
-					<h2>Export to PDF</h2>
-					<p>Presentations can be <a href="https://github.com/hakimel/reveal.js#pdf-export">exported to PDF</a>, here's an example:</p>
-					<iframe src="//www.slideshare.net/slideshow/embed_code/42840540" width="445" height="355" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:3px solid #666; margin-bottom:5px; max-width: 100%;" allowfullscreen> </iframe>
-				</section>
-
-				<section>
-					<h2>Global State</h2>
-					<p>
-						Set <code>data-state="something"</code> on a slide and <code>"something"</code>
-						will be added as a class to the document element when the slide is open. This lets you
-						apply broader style changes, like switching the page background.
-					</p>
-				</section>
-
-				<section data-state="customevent">
-					<h2>State Events</h2>
-					<p>
-						Additionally custom events can be triggered on a per slide basis by binding to the <code>data-state</code> name.
-					</p>
-					<pre><code class="javascript" data-trim contenteditable style="font-size: 18px;">
-Reveal.addEventListener( 'customevent', function() {
-	console.log( '"customevent" has fired' );
-} );
-					</code></pre>
-				</section>
-
-				<section>
-					<h2>Take a Moment</h2>
-					<p>
-						Press B or . on your keyboard to pause the presentation. This is helpful when you're on stage and want to take distracting slides off the screen.
-					</p>
-				</section>
-
-				<section>
-					<h2>Much more</h2>
+					<h3>Things not covered today:</h3>
 					<ul>
-						<li>Right-to-left support</li>
-						<li><a href="https://github.com/hakimel/reveal.js#api">Extensive JavaScript API</a></li>
-						<li><a href="https://github.com/hakimel/reveal.js#auto-sliding">Auto-progression</a></li>
-						<li><a href="https://github.com/hakimel/reveal.js#parallax-background">Parallax backgrounds</a></li>
-						<li><a href="https://github.com/hakimel/reveal.js#keyboard-bindings">Custom keyboard bindings</a></li>
+						<li>Cluster metrics</li>
+						<li>Testing (local and multi JVM)</li>
+						<li>JMX managment</li>
+						<li>Cluster distpacher (!!!)</li>
+						<li>Message serialization</li>
 					</ul>
 				</section>
-
-				<section style="text-align: left;">
-					<h1>THE END</h1>
-					<p>
-						- <a href="http://slides.com">Try the online editor</a> <br>
-						- <a href="https://github.com/hakimel/reveal.js">Source code &amp; documentation</a>
-					</p>
+				<section>
+					<h2>Credits</h2>
+					<p>Many of the code examples and images were taken from the official akka documentation</p>
+					<a href="http://akka.io/docs/" target="_blank">AKKA docs</a>
+				</section>
+				<section>
+					<h1>Thank you!</h1>
 				</section>
 
 			</div>
