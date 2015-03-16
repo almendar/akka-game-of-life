@@ -1,0 +1,6 @@
+.idea/
+.sbtserver/
+info.log
+project/
+target/
+
