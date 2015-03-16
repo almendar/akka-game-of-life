@@ -198,6 +198,8 @@ val children: Iterable[ActorRef] = context.children
 					<section>
 						<h3>Death watch</h3>
 						<p>Works the same way as it would in a non-cluster mode</p>
+						<pre><code>context.watch(actorRef) 
+context.watch(actorSelection) &lt;- won't work</code></pre>
 					</section>
 					<section>
 						<h3>Configuration deployment</h3>
