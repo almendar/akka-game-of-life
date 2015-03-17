@@ -97,13 +97,13 @@
 							<p>dependencies</p>
 							<pre><code>"com.typesafe.akka" %% "akka-cluster" % "x.x.x"</code></pre>
 							<p>application.conf</p>
-							<pre><code data-trim contenteditable>
+							<pre><code data-trim>
 akka {
 	actor { provider = "akka.cluster.ClusterActorRefProvider" }
 	remote {
 		log-remote-lifecycle-events = off
 		netty.tcp {
-			hostname = "ipa_adrress"
+			hostname = "ip_address"
 			port = 0
 		}
 	}
@@ -119,9 +119,9 @@ akka {
 	    			<section>
 	    				<h3>Changes</h3>
 	    				<ul>
-	    					<li>Actor ref provider - it is smart</li>
-	    					<li>Seed nodes - any will do</li>
-	    					<li>Network address to bind </li>
+	    					<li>Actor ref provider, ActorRef still stays smart</li>
+	    					<li>Seed nodes, any node will do</li>
+	    					<li>Network address to bind</li>
 	    				</ul>
 	    			</section>
 				</section>
@@ -132,14 +132,14 @@ akka {
 					<section>
 						<h3>Some actors need to be made aware of the cluster</h3>
 						<ul>
-							<li>In most cases there will be nothing specific to clustering in you're code</li>
+							<li>In most cases there will be nothing specific to clustering in your code</li>
 							<li>Distribution of actors isn't automagical</li>
 							<li>Try to separate how work is distributed from how the work is done</li>
 						</ul>
 					</section>
 					<section>
 					<h3>Listening for cluster events</h3>
-						<pre><code>
+						<pre><code data-trim>
 class SimpleClusterListener extends Actor with ActorLogging {
 	val cluster = Cluster(context.system)
 
@@ -150,10 +150,11 @@ class SimpleClusterListener extends Actor with ActorLogging {
 	}
 	override def postStop(): Unit = cluster.unsubscribe(self)
 	def receive = {
+		case state: CurrentClusterState =>
 		case MemberUp(member) =>
 		case UnreachableMember(member) =>
 		case MemberRemoved(member, previousStatus) =>
-		case _: MemberEvent => // ignore
+		case _: MemberEvent =>
 	}
 }
 						</code></pre>
@@ -162,15 +163,15 @@ class SimpleClusterListener extends Actor with ActorLogging {
 						<h4>Making use of members information</h4>
 						<br/>
 						<p>Selecting remote actor</p>
-						<pre><code>context.actorSelection(RootActorPath(member.address) 
+						<pre><code data-trim>context.actorSelection(RootActorPath(member.address) 
 						/ "user" / "frontend")</code></pre>
 						<p>Creating actor on a remote node</p>
-						<pre><code>
+						<pre><code data-trim>
 system.actorOf(Props[SampleActor]
 	.withDeploy(Deploy(scope = RemoteScope(member.address))))
 						</code></pre>
 						<p>Using remote actorRefs</p>
-						<pre><code>
+						<pre><code data-trim>
 actorRef ! "message" //transparent if acquired properly
 						</code></pre>
 					</section>
@@ -179,12 +180,14 @@ actorRef ! "message" //transparent if acquired properly
 						<ul>
 							<li>Get it sent with a message</li>
 							<li>Using actor selection
-								<pre><code>def resolveOne(timeout: FiniteDuration): Future[ActorRef]</code></pre>
+								<pre><code data-trim>def resolveOne(timeout: FiniteDuration): 
+	Future[ActorRef]</code></pre>
 							</li>
 							<li>Using context methods
-								<pre><code>
+								<pre><code data-trim>
 val parent : ActorRef = context.parent
-val children: Iterable[ActorRef] = context.children
+val children: Iterable[ActorRef] = 
+	context.children
 							</code></li>
 						</ul>
 						<p>Don't use local selection paths. They are missing the address part</p>
@@ -199,7 +202,7 @@ val children: Iterable[ActorRef] = context.children
 						<h3>Death watch</h3>
 						<p>Works the same way as it would in a non-cluster mode</p>
 						<pre><code>context.watch(actorRef) 
-context.watch(actorSelection) &lt;- won't work</code></pre>
+context.watch(actorSelection) &lt;- can't do this</code></pre>
 					</section>
 					<section>
 						<h3>Configuration deployment</h3>
@@ -227,7 +230,7 @@ akka {
 					<section>
 						<h3>Roles</h3>
 						<ul>
-							<li>A way to split your servers into different tasks (e.g. UI, data access layer, number cruncher)</li>
+							<li>A way to group your servers by different tasks they serve (e.g. UI, data access layer, numbers cruncher)</li>
 							<li>Any node can connect and claim what its role is</li>
 							<li>This information is available in member events</li>
 							<br/>
@@ -252,10 +255,10 @@ akka.cluster.role {
 					<section>
 						<h3>External contributions</h3>
 						<ul>
-							<li>Cluster Singleton</li>
-							<li>Cluster Sharding</li>
-							<li>Distributed Publish Subscribe</li>
-							<li>Cluster Client</li>
+							<li><b>Cluster Singleton</b> - exactly one actor of a certain type running somewhere in the cluster</li>
+							<li><b>Cluster Sharding</b> - distribute actors across several nodes in the cluster and want to be able to interact with them using their logical identifier</li>
+							<li><b>Distributed Publish Subscribe</b> - registry of actors</li>
+							<li><b>Cluster Client</b> - actor can communicate with cluster being outside of the cluster</li>
 						</ul>
 					</section>
 				</section>
@@ -305,7 +308,7 @@ akka.actor.deployment {
 				<section>
 					<h3>How akka remoting and clustering relate?</h3>
 					<ul>
-						<li>Remoting is responsible for all the plumbing that takes care of network communication.</li>
+						<li>Remoting is responsible for all the plumbing that takes care of the network communication</li>
 						<li>akka-cluster is build on top of it</li>
 						<li>There is probably no need to use remoting directly</li>
 					</ul>
