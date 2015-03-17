@@ -3,9 +3,10 @@
 To run the application:
 
 1. Start at least two console windows with sbt.
-2. Enter `re-start` command in every window.
-3. Start one `RunFrontend` and as many as you want `RunBackend`
-4. Watch the log file `tail -f info.log`
-5. Watch the simulation
+2. Enter `re-start 2551` command in one window.
+3. Enter `re-start` in every other windows.
+3. Start `RunFrontend` where 2551 argument.
+4. Everywhere else start `RunBackend`
+4. Watch the simulation with the log file `tail -f info.log`
 
 Any of the backends can be closed with `ctrl+c`. Application should survive that and move dead actors to other nodes and regenerate.
