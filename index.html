@@ -203,6 +203,8 @@ val children: Iterable[ActorRef] =
 						<p>Works the same way as it would in a non-cluster mode</p>
 						<pre><code>context.watch(actorRef) 
 context.watch(actorSelection) &lt;- can't do this</code></pre>
+
+						<p>Notice that dead child is not handled by the supervision strategy</p>
 					</section>
 					<section>
 						<h3>Configuration deployment</h3>
