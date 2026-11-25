@@ -1,68 +1,111 @@
 package gameoflife
 
-import org.apache.pekko.actor.{Props, ActorRef, ActorLogging, Actor}
-import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
-import NextStateCellGathererActor._
+import org.apache.pekko.actor.typed.{ActorRef, Behavior, RecipientRef}
+import org.apache.pekko.actor.typed.scaladsl.{Behaviors, TimerScheduler}
+import scala.concurrent.duration.*
 
-/**
- * Created by tomaszk on 3/9/15.
- */
+object NextStateCellGathererActor:
+  sealed trait Command
 
-case class GatheredData(epoch : Epoch, gatheredState : Set[StateForEpoch] = Set.empty, howManyAnswersShouldThereBe :Int) {
+  final case class StateForEpoch(
+      epoch: Int,
+      alive: Boolean,
+      position: Position
+  ) extends Command
+      with CborSerializable
 
-  def needMore : Boolean = gatheredState.size < howManyAnswersShouldThereBe
+  private case object Retry extends Command
 
-  def pushNewState(stateToAdd:StateForEpoch) : GatheredData = {
-    copy(gatheredState = gatheredState + stateToAdd)
-  }
-}
+  def apply(
+      epoch: Int,
+      neighbours: Vector[RecipientRef[CellActor.Command]],
+      currentState: CellState,
+      parent: ActorRef[CellActor.Command],
+      retryInterval: FiniteDuration = 1.second,
+      maxRetries: Int = 2
+  ): Behavior[Command] =
+    Behaviors.setup { context =>
+      Behaviors.withTimers { timers =>
+        def askNeighbours(): Unit =
+          neighbours.foreach(_ ! CellActor.GetStateForEpoch(epoch, context.self))
 
-class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Set[ActorRef], currentState : CellState ) extends Actor with ActorLogging {
-  var retries = 0
-  var gatheredData :  GatheredData = null
-
-  override def preStart(): Unit = {
-    gatheredData = GatheredData(epoch = epoch, howManyAnswersShouldThereBe = whoToAsk.size)
-    askForValues
-    context.system.scheduler.scheduleOnce(1.second, self, Retry)
-  }
-
-
-  def askForValues: Unit = {
-    whoToAsk.foreach {
-      _ ! CellActor.GetStateFromEpoch(epoch)
-    }
-  }
-
-  override def receive: Receive = {
-    case p @ StateForEpoch(_,_,_) => {
-      gatheredData = gatheredData.pushNewState(p)
-      if (!gatheredData.needMore) {
-        val aliveNeighbours : Int = gatheredData.gatheredState.map(_.value)
-          .foldLeft(0)((acc, value) => if (value) acc + 1 else acc)
-        val newState : Boolean = if(currentState && aliveNeighbours == 3 ) !currentState else currentState
-        context.parent ! CellActor.SetNewStateMsg(newState, epoch + 1)
-        context.stop(self)
+        if neighbours.isEmpty then
+          val next = GameOfLife.nextState(currentState, aliveNeighbours = 0)
+          parent ! CellActor.StateComputed(epoch + 1, next.isAlive)
+          Behaviors.stopped
+        else
+          askNeighbours()
+          timers.startSingleTimer(Retry, retryInterval)
+          collecting(
+            epoch = epoch,
+            expectedCount = neighbours.size,
+            currentState = currentState,
+            gathered = Map.empty,
+            retries = 0,
+            maxRetries = maxRetries,
+            retryInterval = retryInterval,
+            parent = parent,
+            askNeighbours = askNeighbours,
+            timers = timers
+          )
       }
     }
-    case Retry =>
-      retries += 1
-      if(retries >= 2) {
-        context.parent ! CellActor.FailedToGatherInfoMsg
-        context.stop(self)
-      }
-      else {
-        askForValues
-        context.system.scheduler.scheduleOnce(1.second, self, Retry)
-      }
-  }
-}
 
-object NextStateCellGathererActor {
-  def props(position : Position, epoch:Epoch, whoToAsk:Set[ActorRef], currentState : CellState) =
-    Props(classOf[NextStateCellGathererActor],position,epoch,whoToAsk,currentState)
-  case class GatherForEpoch(epoch : Epoch, neighbours : Neighbours) extends CborSerializable
-  case class StateForEpoch(epoch:Epoch, value:CellState, position : Position) extends CborSerializable
-  case object Retry
-}
+  private def collecting(
+      epoch: Int,
+      expectedCount: Int,
+      currentState: CellState,
+      gathered: Map[Position, CellState],
+      retries: Int,
+      maxRetries: Int,
+      retryInterval: FiniteDuration,
+      parent: ActorRef[CellActor.Command],
+      askNeighbours: () => Unit,
+      timers: TimerScheduler[Command]
+  ): Behavior[Command] =
+    Behaviors.receiveMessage {
+      case StateForEpoch(msgEpoch, alive, position) if msgEpoch == epoch =>
+        val updated = gathered + (position -> CellState.fromBoolean(alive))
+        if updated.size == expectedCount then
+          val aliveNeighbours = updated.values.count(_.isAlive)
+          val next            = GameOfLife.nextState(currentState, aliveNeighbours)
+          parent ! CellActor.StateComputed(epoch + 1, next.isAlive)
+          Behaviors.stopped
+        else
+          collecting(
+            epoch = epoch,
+            expectedCount = expectedCount,
+            currentState = currentState,
+            gathered = updated,
+            retries = retries,
+            maxRetries = maxRetries,
+            retryInterval = retryInterval,
+            parent = parent,
+            askNeighbours = askNeighbours,
+            timers = timers
+          )
+
+      case StateForEpoch(_, _, _) =>
+        Behaviors.same
+
+      case Retry =>
+        val nextRetries = retries + 1
+        if nextRetries >= maxRetries then
+          parent ! CellActor.GatherFailed
+          Behaviors.stopped
+        else
+          askNeighbours()
+          timers.startSingleTimer(Retry, retryInterval)
+          collecting(
+            epoch = epoch,
+            expectedCount = expectedCount,
+            currentState = currentState,
+            gathered = gathered,
+            retries = nextRetries,
+            maxRetries = maxRetries,
+            retryInterval = retryInterval,
+            parent = parent,
+            askNeighbours = askNeighbours,
+            timers = timers
+          )
+    }
