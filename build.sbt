@@ -1,21 +1,33 @@
 name := "game-of-life"
 
-version := "1.0"
+version := "2.0.0"
 
-scalaVersion := "3.3.4"
+scalaVersion := "3.3.9"
 
-val pekkoVersion = "1.1.3"
+val pekkoVersion = "1.7.0"
 
-val pekkoDeps: List[ModuleID] = for {
-  artefact <- List("pekko-actor", "pekko-cluster", "pekko-slf4j", "pekko-serialization-jackson")
-} yield "org.apache.pekko" %% artefact % pekkoVersion
-
-libraryDependencies ++= pekkoDeps
-
-libraryDependencies ++= Seq(
-  "ch.qos.logback" % "logback-classic" % "1.5.12",
-  "org.apache.pekko" %% "pekko-testkit" % pekkoVersion % Test,
-  "org.scalatest" %% "scalatest" % "3.2.19" % Test
+scalacOptions ++= Seq(
+  "-deprecation",
+  "-feature",
+  "-unchecked",
+  "-Wunused:all",
+  "-Wvalue-discard",
+  "-Werror"
 )
 
-run / fork := true
+val pekkoDeps: Seq[ModuleID] = Seq(
+  "pekko-actor-typed",
+  "pekko-cluster-typed",
+  "pekko-cluster-sharding-typed",
+  "pekko-slf4j",
+  "pekko-serialization-jackson"
+).map(artifact => "org.apache.pekko" %% artifact % pekkoVersion)
+
+libraryDependencies ++= pekkoDeps ++ Seq(
+  "ch.qos.logback"    % "logback-classic"          % "1.5.37",
+  "org.apache.pekko" %% "pekko-actor-testkit-typed" % pekkoVersion % Test,
+  "org.scalatest"    %% "scalatest"                % "3.2.19"     % Test
+)
+
+run / fork  := true
+Test / fork := true

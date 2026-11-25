@@ -1,63 +1,91 @@
 package gameoflife
 
-import java.util.concurrent.TimeUnit
-
-import org.apache.pekko.actor.ActorSystem
 import com.typesafe.config.{Config, ConfigFactory}
+import org.apache.pekko.actor.typed.ActorSystem
+import org.apache.pekko.actor.typed.scaladsl.Behaviors
+import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 
-import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
+private[gameoflife] object ClusterBootstrap:
+  val SystemName = "TheGameOfLife"
 
-/**
- * Created by tomaszk on 3/9/15.
- */
-object RunFrontend {
+  def loadConfig(port: Int, roles: Seq[String], seedPort: Option[Int] = None): Config =
+    val rolesHocon   = roles.mkString("[", ", ", "]")
+    val seedOverride = seedPort match
+      case Some(sp) =>
+        s"""pekko.cluster.seed-nodes = ["pekko://$SystemName@127.0.0.1:$sp"]"""
+      case None => ""
 
-  def convertTime(l: Long): FiniteDuration =
-    FiniteDuration(l, TimeUnit.MILLISECONDS)
-
-  def getTimeFromConfig(config: Config)(key: String): FiniteDuration =
-    convertTime(config.getDuration(key, TimeUnit.MILLISECONDS))
-
-  def runFrontend(args: Array[String]): Unit = {
-    val port = if (args.nonEmpty) args(0).toInt else 0
-
-    import gameoflife.BoardCreator._
-    val config: Config = ConfigFactory.parseString(s"pekko.remote.artery.canonical.port=$port")
-      .withFallback(ConfigFactory.parseString("pekko.cluster.roles = [frontend]"))
+    ConfigFactory
+      .parseString(
+        s"""pekko.remote.artery.canonical.port = $port
+           |pekko.cluster.roles = $rolesHocon
+           |$seedOverride
+           |""".stripMargin
+      )
       .withFallback(ConfigFactory.load())
-    val (x, y) = (config.getInt("game-of-life.board.size.x"), config.getInt("game-of-life.board.size.y"))
 
-    val thisConfig = getTimeFromConfig(config)
-    implicit val system: ActorSystem = ActorSystem("TheGameOfLife", config)
+  def initCellSharding(system: ActorSystem[?], gameConfig: GameConfig): ClusterSharding =
+    val sharding = ClusterSharding(system)
+    val _        = sharding.init(
+      Entity(CellActor.TypeKey)(entityContext =>
+        CellActor.sharded(
+          entityId = entityContext.entityId,
+          boardSize = gameConfig.boardSize,
+          boardSeed = gameConfig.boardSeed,
+          sharding = sharding
+        )
+      ).withRole("backend")
+    )
+    sharding
 
-    val simulatonParams = SimulationParams(
-      thisConfig("game-of-life.simulation.start-delay"),
-      thisConfig("game-of-life.simulation.tick"),
-      thisConfig("game-of-life.errors.delay"),
-      thisConfig("game-of-life.errors.every"),
-      config.getInt("game-of-life.simulation.max-crashes")
+object RunFrontend:
+  def main(args: Array[String]): Unit =
+    val port       = args.headOption.map(_.toInt).getOrElse(0)
+    val config     = ClusterBootstrap.loadConfig(port, roles = Seq("frontend"))
+    val gameConfig = GameConfig.fromConfig(config)
+
+    val _ = ActorSystem(
+      Behaviors.setup[BoardCoordinator.Command] { context =>
+        val sharding = ClusterBootstrap.initCellSharding(context.system, gameConfig)
+        BoardCoordinator(
+          config = gameConfig,
+          cellRefFor = pos => sharding.entityRefFor(CellActor.TypeKey, pos.entityId)
+        )
+      },
+      ClusterBootstrap.SystemName,
+      config
     )
 
-    val delay = thisConfig("game-of-life.simulation.wait-for-backends")
-    val boardSize: BoardSize = (x, y)
-    val mainBoard = system.actorOf(BoardCreator.props(boardSize, simulatonParams), "BoardCreator")
-    system.scheduler.scheduleOnce(delay, mainBoard, StartSimulation)
-  }
-
+object RunBackend:
   def main(args: Array[String]): Unit =
-    runFrontend(args)
-}
+    val port       = args.headOption.map(_.toInt).getOrElse(0)
+    val config     = ClusterBootstrap.loadConfig(port, roles = Seq("backend"))
+    val gameConfig = GameConfig.fromConfig(config)
 
-object RunBackend {
-  def runBackend(args: Array[String]): Unit = {
-    val port = if (args.nonEmpty) args(0).toInt else 0
-    val config: Config = ConfigFactory.parseString(s"pekko.remote.artery.canonical.port=$port")
-      .withFallback(ConfigFactory.parseString("pekko.cluster.roles = [backend]"))
-      .withFallback(ConfigFactory.load())
-    ActorSystem("TheGameOfLife", config)
-  }
+    val _ = ActorSystem(
+      Behaviors.setup[Nothing] { context =>
+        val _ = ClusterBootstrap.initCellSharding(context.system, gameConfig)
+        Behaviors.empty
+      },
+      ClusterBootstrap.SystemName,
+      config
+    )
 
+object RunStandalone:
   def main(args: Array[String]): Unit =
-    runBackend(args)
-}
+    val port   = args.headOption.map(_.toInt).getOrElse(2551)
+    val config =
+      ClusterBootstrap.loadConfig(port, roles = Seq("frontend", "backend"), seedPort = Some(port))
+    val gameConfig = GameConfig.fromConfig(config)
+
+    val _ = ActorSystem(
+      Behaviors.setup[BoardCoordinator.Command] { context =>
+        val sharding = ClusterBootstrap.initCellSharding(context.system, gameConfig)
+        BoardCoordinator(
+          config = gameConfig,
+          cellRefFor = pos => sharding.entityRefFor(CellActor.TypeKey, pos.entityId)
+        )
+      },
+      ClusterBootstrap.SystemName,
+      config
+    )

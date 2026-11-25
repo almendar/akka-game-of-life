@@ -1,12 +1,72 @@
-# akka-game-of-life
+# Pekko Game of Life
 
-To run the application:
+A fault-tolerant, distributed implementation of Conway's Game of Life built with **Scala 3**, **Apache Pekko Typed**, and **Pekko Cluster Sharding**.
 
-1. Start at least two console windows with sbt.
-2. Enter `re-start 2551` command in one window.
-3. Enter `re-start` in every other windows.
-3. Start `RunFrontend` where 2551 argument was passed.
-4. Everywhere else start `RunBackend`
-4. Watch the simulation with the log file `tail -f info.log`
+## Architecture
 
-Any of the backends can be closed with `ctrl+c`. Application should survive that and move dead actors to other nodes and regenerate.
+- **Cluster Sharding (`CellActor`)**: Every cell `(x, y)` on the board is a sharded entity (`entityId = "x,y"`) distributed across cluster nodes with the `backend` role.
+- **Epoch Coordination (`BoardCoordinator`)**: Runs on `frontend` nodes, monitors cluster backend membership, advances the simulation on a fixed tick timer, and optionally injects simulated crashes (`DoCrash`) to demonstrate supervision and deterministic history replay.
+- **Neighbour State Gathering (`NextStateCellGathererActor`)**: Short-lived typed child actor spawned per cell per epoch to gather neighbouring states with retries and apply Conway's Game of Life transition rules.
+- **Board Rendering (`LoggerActor`)**: Aggregates per-epoch cell reports and writes coordinate-ordered board snapshots to `info.log` while operational cluster logs stream to stdout.
+- **Serialization & Resilience**: All cluster messages use **Jackson CBOR** (`allow-java-serialization = off`), and **Split Brain Resolver** handles node failures so orphaned cell entities automatically rebalance onto surviving backends.
+
+## Prerequisites
+
+- **JDK 17+** (tested with OpenJDK 21)
+- **sbt 1.12+**
+
+## Running the Simulation
+
+### Single-Node (Standalone)
+
+Run a single-JVM cluster node carrying both `frontend` and `backend` roles:
+
+```bash
+sbt "runMain gameoflife.RunStandalone"
+```
+
+Watch the board evolve in another terminal:
+
+```bash
+tail -f info.log
+```
+
+### Multi-Node Cluster
+
+1. Start the seed/frontend node on port `2551`:
+   ```bash
+   sbt "runMain gameoflife.RunFrontend 2551"
+   ```
+2. Start one or more backend nodes (in separate terminals):
+   ```bash
+   sbt "runMain gameoflife.RunBackend"
+   ```
+3. Watch the simulation output:
+   ```bash
+   tail -f info.log
+   ```
+
+You can stop any backend node with `Ctrl+C`. Split Brain Resolver will down the lost node, Cluster Sharding will relocate its cell entities onto surviving backend nodes, and the simulation will automatically recover and continue.
+
+*(If you prefer `sbt-revolver` hot reloads, launch `sbt` and use `reStart` after selecting the main class.)*
+
+## Configuration
+
+Settings live in `src/main/resources/application.conf` under `game-of-life`:
+
+- `board.size.x`, `board.size.y` — Grid dimensions (default `6x6`)
+- `board.seed` — Deterministic seed for initial cell states across cluster nodes
+- `simulation.wait-for-backends`, `simulation.start-delay`, `simulation.tick`, `simulation.max-crashes`
+- `errors.delay`, `errors.every` — Simulated cell crash injection cadence
+
+Network bindings can also be overridden via `PEKKO_HOSTNAME` and `PEKKO_PORT`.
+
+## Development & Testing
+
+```bash
+# Check code formatting
+sbt scalafmtCheckAll
+
+# Run unit, actor, and CBOR serialization tests
+sbt test
+```

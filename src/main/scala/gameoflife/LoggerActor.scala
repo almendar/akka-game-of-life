@@ -1,48 +1,65 @@
 package gameoflife
 
-import org.apache.pekko.actor._
-import gameoflife.BoardCreator.CellStateMsg
+import org.apache.pekko.actor.typed.Behavior
+import org.apache.pekko.actor.typed.scaladsl.Behaviors
+import org.slf4j.LoggerFactory
+import scala.annotation.tailrec
 
+object LoggerActor:
+  sealed trait Command extends CborSerializable
 
-/**
- * Created by tomaszk on 3/9/15.
- */
+  final case class CellStateReported(
+      position: Position,
+      alive: Boolean,
+      epoch: Int
+  ) extends Command
 
-object LoggerActor {
-  private def props(boardSize: BoardSize) = Props(classOf[LoggerActor],boardSize)
-  private val NAME = "Logger"
-  def startMe(boardSize: BoardSize)(implicit as : ActorSystem) : ActorRef = as.actorOf(props(boardSize),NAME)
+  private val boardLogger = LoggerFactory.getLogger("gameoflife.board")
 
+  def apply(
+      boardSize: BoardSize,
+      onBoardRendered: (Int, String) => Unit = (_, _) => ()
+  ): Behavior[Command] =
+    active(
+      boardSize = boardSize,
+      pending = Map.empty,
+      watermark = -1,
+      loggedEpochs = Set.empty,
+      onBoardRendered = onBoardRendered
+    )
 
-  val getBoardRow : (Int,BoardStateAtTime,BoardSize) => List[CellStateMsg] = (row,board,boardSize) => board.slice(row * boardSize._1, (row+1) * boardSize._1)
-  val cellStateToInts : (CellStateMsg) => Int = cellState => if(cellState.state) 1 else 0
-  val getStringReprOsRow : (List[Int]) => String = cells => cells.mkString("[",",","]")
+  private def active(
+      boardSize: BoardSize,
+      pending: Map[Int, Map[Position, CellState]],
+      watermark: Int,
+      loggedEpochs: Set[Int],
+      onBoardRendered: (Int, String) => Unit
+  ): Behavior[Command] =
+    Behaviors.receiveMessage { case CellStateReported(position, alive, epoch) =>
+      if epoch <= watermark || loggedEpochs.contains(epoch) || !boardSize.contains(position) then
+        Behaviors.same
+      else
+        val updatedEpochStates =
+          pending.getOrElse(epoch, Map.empty) + (position -> CellState.fromBoolean(alive))
 
-}
-
-private class LoggerActor(boardSize:BoardSize) extends Actor with ActorLogging{
-
-  import LoggerActor._
-
-  var map : Map[Epoch,BoardStateAtTime] = Map.empty
-  val numberOfCells = boardSize._1 * boardSize._2
-
-  override def receive = {
-    case cs @ CellStateMsg(position, cellState, epoch) => {
-      val otherCells: List[CellStateMsg] = map.getOrElse(epoch, List.empty)
-      val newEntry: (Int, BoardStateAtTime) = epoch -> (cs :: otherCells)
-      map = map + newEntry
-      if (newEntry._2.size == numberOfCells) {
-        val x = boardSize._1
-        val y = boardSize._2
-        val cells = newEntry._2
-        val formatedRows: List[String] =
-          (0 until y).toList map (getBoardRow(_, cells, boardSize) map cellStateToInts) map getStringReprOsRow
-        log.info(s"At epoch:$epoch")
-        log.info("-" * (x * 2 + 1))
-        formatedRows.foreach(log.info)
-        log.info("-" * (x * 2 + 1) + "\n")
-      }
+        if updatedEpochStates.size == boardSize.cellCount then
+          val rendered = GameOfLife.formatBoard(epoch, boardSize, updatedEpochStates)
+          boardLogger.info(rendered)
+          onBoardRendered(epoch, rendered)
+          val (nextWatermark, nextLogged) = advanceWatermark(watermark, loggedEpochs + epoch)
+          active(boardSize, pending - epoch, nextWatermark, nextLogged, onBoardRendered)
+        else
+          active(
+            boardSize,
+            pending + (epoch -> updatedEpochStates),
+            watermark,
+            loggedEpochs,
+            onBoardRendered
+          )
     }
-  }
-}
+
+  @tailrec
+  private def advanceWatermark(watermark: Int, logged: Set[Int]): (Int, Set[Int]) =
+    val next = watermark + 1
+    if logged.contains(next) then advanceWatermark(next, logged - next)
+    else (watermark, logged)
