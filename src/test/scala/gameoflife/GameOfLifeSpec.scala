@@ -72,6 +72,29 @@ class GameOfLifeSpec
       Position.fromEntityId(pos.entityId) shouldBe pos
     }
 
+    "round-trip CellEntityId for both legacy and extended formats" in {
+      val legacy = CellEntityId(Position(2, 4))
+      legacy.encode shouldBe "2,4"
+      CellEntityId.decode("2,4") shouldBe legacy
+
+      val spec     = BoardSpec(BoardSize(12, 10), seed = 99L, pattern = BoardPattern.Glider)
+      val extended = CellEntityId(Position(3, 7), simulationId = 2, boardSpec = Some(spec))
+      CellEntityId.decode(extended.encode) shouldBe extended
+    }
+
+    "place BoardPattern presets deterministically on the board" in {
+      val gliderSpec = BoardSpec(BoardSize(10, 10), seed = 1L, pattern = BoardPattern.Glider)
+      val aliveCells =
+        gliderSpec.size.allPositions.count(p => GameOfLife.initialCellState(p, gliderSpec).isAlive)
+      aliveCells shouldBe 5
+
+      val gunSpec =
+        BoardSpec(BoardSize(38, 18), seed = 1L, pattern = BoardPattern.GosperGliderGun)
+      val gunAlive =
+        gunSpec.size.allPositions.count(p => GameOfLife.initialCellState(p, gunSpec).isAlive)
+      gunAlive shouldBe 36
+    }
+
     "reject non-positive dimensions" in {
       an[IllegalArgumentException] should be thrownBy BoardSize(0, 5)
       an[IllegalArgumentException] should be thrownBy BoardSize(5, -1)
@@ -142,12 +165,47 @@ class GameOfLifeSpec
           loggerProbe.expectMessageType[LoggerActor.CellStateReported](5.seconds)
         }
         reports.foreach(_.epoch shouldBe epoch)
-        reports.collect { case LoggerActor.CellStateReported(pos, true, _) => pos }.toSet
+        reports.collect { case LoggerActor.CellStateReported(pos, true, _, _, _) => pos }.toSet
 
       // Epoch 1: horizontal bar at y = 1
       collectEpoch(1) shouldBe Set(Position(0, 1), Position(1, 1), Position(2, 1))
       // Epoch 2: back to vertical bar at x = 1
       collectEpoch(2) shouldBe initialAlive
+    }
+
+    "report epoch 0 with nodeAddress and emit CellCrashed on PreRestart" in {
+      val boardSize   = BoardSize(2, 2)
+      val loggerProbe = createTestProbe[LoggerActor.Command]()
+      val dummyNbr    = createTestProbe[CellActor.Command]()
+      val cell        = spawn(
+        CellActor(
+          position = Position(0, 0),
+          boardSize = boardSize,
+          initialState = CellState.Alive,
+          neighbourLookup = _ => dummyNbr.ref,
+          nodeAddress = "pekko://TheGameOfLife@127.0.0.1:2552",
+          simulationId = 3
+        )
+      )
+
+      cell ! CellActor.AdvanceToEpoch(0, loggerProbe.ref)
+      val report = loggerProbe.expectMessageType[LoggerActor.CellStateReported](3.seconds)
+      report shouldBe LoggerActor.CellStateReported(
+        Position(0, 0),
+        alive = true,
+        epoch = 0,
+        nodeAddress = "pekko://TheGameOfLife@127.0.0.1:2552",
+        simulationId = 3
+      )
+
+      cell ! CellActor.DoCrash
+      val crash = loggerProbe.expectMessageType[LoggerActor.CellCrashed](3.seconds)
+      crash shouldBe LoggerActor.CellCrashed(
+        Position(0, 0),
+        epoch = 0,
+        nodeAddress = "pekko://TheGameOfLife@127.0.0.1:2552",
+        simulationId = 3
+      )
     }
 
     "recover after a simulated crash and catch up using neighbour histories" in {
@@ -184,8 +242,10 @@ class GameOfLifeSpec
       var epoch2Reports = Map.empty[Position, Boolean]
       val deadline      = 5.seconds.fromNow
       while epoch2Reports.size < 4 && deadline.hasTimeLeft() do
-        val msg = loggerProbe.expectMessageType[LoggerActor.CellStateReported](deadline.timeLeft)
-        if msg.epoch == 2 then epoch2Reports += (msg.position -> msg.alive)
+        loggerProbe.expectMessageType[LoggerActor.Command](deadline.timeLeft) match
+          case LoggerActor.CellStateReported(pos, alive, 2, _, _) =>
+            epoch2Reports += (pos -> alive)
+          case _ => ()
 
       epoch2Reports shouldBe boardSize.allPositions.map(_ -> true).toMap
     }
@@ -201,8 +261,22 @@ class GameOfLifeSpec
         CellActor.AdvanceToEpoch(3, loggerProbe.ref),
         CellActor.GetStateForEpoch(2, gathererProbe.ref),
         CellActor.DoCrash,
+        CellActor.Passivate,
+        CellActor.Stop,
         NextStateCellGathererActor.StateForEpoch(2, alive = true, Position(1, 2)),
-        LoggerActor.CellStateReported(Position(0, 1), alive = false, epoch = 4)
+        LoggerActor.CellStateReported(
+          Position(0, 1),
+          alive = false,
+          epoch = 4,
+          nodeAddress = "pekko://TheGameOfLife@127.0.0.1:2552",
+          simulationId = 2
+        ),
+        LoggerActor.CellCrashed(
+          Position(1, 1),
+          epoch = 3,
+          nodeAddress = "pekko://TheGameOfLife@127.0.0.1:2553",
+          simulationId = 2
+        )
       )
 
       messages.foreach { msg =>

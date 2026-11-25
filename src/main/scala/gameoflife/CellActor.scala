@@ -9,6 +9,7 @@ import org.apache.pekko.actor.typed.{
 }
 import org.apache.pekko.actor.typed.scaladsl.{ActorContext, Behaviors}
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, EntityTypeKey}
+import org.apache.pekko.cluster.typed.Cluster
 import scala.concurrent.duration.*
 
 object CellActor:
@@ -28,7 +29,9 @@ object CellActor:
   ) extends Command
       with CborSerializable
 
-  case object DoCrash extends Command with CborSerializable
+  case object DoCrash   extends Command with CborSerializable
+  case object Passivate extends Command with CborSerializable
+  case object Stop      extends Command with CborSerializable
 
   final private[gameoflife] case class StateComputed(epoch: Int, alive: Boolean) extends Command
   private[gameoflife] case object GatherFailed                                   extends Command
@@ -48,23 +51,34 @@ object CellActor:
       entityId: String,
       boardSize: BoardSize,
       boardSeed: Long,
-      sharding: ClusterSharding
+      sharding: ClusterSharding,
+      shardRef: Option[ActorRef[ClusterSharding.ShardCommand]] = None
   ): Behavior[Command] =
-    val position     = Position.fromEntityId(entityId)
-    val initialState = GameOfLife.initialCellState(position, boardSeed)
-    apply(
-      position = position,
-      boardSize = boardSize,
-      initialState = initialState,
-      neighbourLookup = pos => sharding.entityRefFor(TypeKey, pos.entityId)
-    )
+    Behaviors.setup { context =>
+      val decoded       = CellEntityId.decode(entityId)
+      val effectiveSpec = decoded.boardSpec.getOrElse(BoardSpec(boardSize, boardSeed))
+      val initialState  = GameOfLife.initialCellState(decoded.position, effectiveSpec)
+      val nodeAddress   = Cluster(context.system).selfMember.address.toString
+      apply(
+        position = decoded.position,
+        boardSize = effectiveSpec.size,
+        initialState = initialState,
+        neighbourLookup = pos => sharding.entityRefFor(TypeKey, decoded.forPosition(pos)),
+        nodeAddress = nodeAddress,
+        simulationId = decoded.simulationId,
+        shardRef = shardRef
+      )
+    }
 
   def apply(
       position: Position,
       boardSize: BoardSize,
       initialState: CellState,
       neighbourLookup: Position => RecipientRef[Command],
-      gatherRetryInterval: FiniteDuration = 1.second
+      gatherRetryInterval: FiniteDuration = 1.second,
+      nodeAddress: String = "local",
+      simulationId: Int = 0,
+      shardRef: Option[ActorRef[ClusterSharding.ShardCommand]] = None
   ): Behavior[Command] =
     Behaviors
       .supervise(
@@ -76,6 +90,9 @@ object CellActor:
             neighbourPositions = neighbourPositions,
             neighbourLookup = neighbourLookup,
             gatherRetryInterval = gatherRetryInterval,
+            nodeAddress = nodeAddress,
+            simulationId = simulationId,
+            shardRef = shardRef,
             state = CellActorState(
               history = Vector(initialState),
               globalEpoch = 0,
@@ -95,12 +112,23 @@ object CellActor:
       neighbourPositions: Vector[Position],
       neighbourLookup: Position => RecipientRef[Command],
       gatherRetryInterval: FiniteDuration,
+      nodeAddress: String,
+      simulationId: Int,
+      shardRef: Option[ActorRef[ClusterSharding.ShardCommand]],
       state: CellActorState
   ): Behavior[Command] =
     Behaviors
       .receive[Command] { (context, message) =>
         message match
           case AdvanceToEpoch(epoch, loggerRef) =>
+            if epoch == 0 && state.currentEpoch == 0 then
+              loggerRef ! LoggerActor.CellStateReported(
+                position,
+                state.currentState.isAlive,
+                0,
+                nodeAddress,
+                simulationId
+              )
             val updated = state.copy(
               globalEpoch = math.max(state.globalEpoch, epoch),
               loggerRef = Some(loggerRef)
@@ -113,7 +141,16 @@ object CellActor:
                 gatherRetryInterval,
                 updated
               )
-            active(position, neighbourPositions, neighbourLookup, gatherRetryInterval, next)
+            active(
+              position,
+              neighbourPositions,
+              neighbourLookup,
+              gatherRetryInterval,
+              nodeAddress,
+              simulationId,
+              shardRef,
+              next
+            )
 
           case GetStateForEpoch(epoch, replyTo) =>
             state.history.lift(epoch) match
@@ -127,7 +164,16 @@ object CellActor:
               case None =>
                 val waiters = state.pendingRequests.getOrElse(epoch, Set.empty) + replyTo
                 val next = state.copy(pendingRequests = state.pendingRequests + (epoch -> waiters))
-                active(position, neighbourPositions, neighbourLookup, gatherRetryInterval, next)
+                active(
+                  position,
+                  neighbourPositions,
+                  neighbourLookup,
+                  gatherRetryInterval,
+                  nodeAddress,
+                  simulationId,
+                  shardRef,
+                  next
+                )
 
           case StateComputed(epoch, alive) if epoch == state.history.length =>
             val newCellState = CellState.fromBoolean(alive)
@@ -139,7 +185,9 @@ object CellActor:
               epoch
             )
             val updatedHistory = state.history :+ newCellState
-            state.loggerRef.foreach(_ ! LoggerActor.CellStateReported(position, alive, epoch))
+            state.loggerRef.foreach(
+              _ ! LoggerActor.CellStateReported(position, alive, epoch, nodeAddress, simulationId)
+            )
 
             val waiters = state.pendingRequests.getOrElse(epoch, Set.empty)
             waiters.foreach(
@@ -158,7 +206,16 @@ object CellActor:
               gatherRetryInterval,
               afterUpdate
             )
-            active(position, neighbourPositions, neighbourLookup, gatherRetryInterval, next)
+            active(
+              position,
+              neighbourPositions,
+              neighbourLookup,
+              gatherRetryInterval,
+              nodeAddress,
+              simulationId,
+              shardRef,
+              next
+            )
 
           case StateComputed(_, _) =>
             Behaviors.same
@@ -174,6 +231,9 @@ object CellActor:
               neighbourPositions,
               neighbourLookup,
               gatherRetryInterval,
+              nodeAddress,
+              simulationId,
+              shardRef,
               state.copy(waitingForNewState = false)
             )
 
@@ -181,9 +241,23 @@ object CellActor:
             throw new RuntimeException(
               s"Simulated crash of Cell $position at epoch ${state.currentEpoch} (global ${state.globalEpoch})"
             )
+
+          case Passivate =>
+            shardRef match
+              case Some(shard) =>
+                shard ! ClusterSharding.Passivate(context.self)
+                Behaviors.same
+              case None =>
+                Behaviors.stopped
+
+          case Stop =>
+            Behaviors.stopped
       }
       .receiveSignal { case (context, PreRestart) =>
         context.log.warn("Cell {} is restarting", position)
+        state.loggerRef.foreach(
+          _ ! LoggerActor.CellCrashed(position, state.currentEpoch, nodeAddress, simulationId)
+        )
         Behaviors.same
       }
 

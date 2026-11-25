@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pekko Game of Life — Cluster Sharding Mission Control</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="logo-mark" aria-hidden="true"></div>
+      <div>
+        <h1>Pekko Game of Life</h1>
+        <p class="subtitle">Distributed Cluster Sharding &amp; Multi-JVM Simulator</p>
+      </div>
+      <span id="conn-badge" class="badge badge-warn">Connecting…</span>
+    </div>
+
+    <div class="topbar-kpis">
+      <div class="kpi">
+        <span class="kpi-label">Epoch</span>
+        <span id="kpi-epoch" class="kpi-value">—</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">Alive</span>
+        <span id="kpi-alive" class="kpi-value">—</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">Backends Up</span>
+        <span id="kpi-backends" class="kpi-value">0</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">Crashes</span>
+        <span id="kpi-crashes" class="kpi-value">0</span>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <button id="btn-play-pause" class="btn btn-primary" title="Start / Pause / Resume simulation">
+        ▶ Start
+      </button>
+      <button id="btn-step" class="btn btn-secondary" title="Advance exactly one epoch">
+        ⏭ Step +1
+      </button>
+      <button id="btn-crash-random" class="btn btn-danger-outline" title="Send DoCrash to a random CellActor">
+        ⚡ Crash Cell
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="stage-column">
+      <div class="card board-card">
+        <div class="card-header">
+          <div class="board-title-group">
+            <h2>Simulation Board</h2>
+            <span id="board-meta" class="meta-pill">6×6 · Random</span>
+            <span id="mode-badge" class="badge badge-live">LIVE</span>
+          </div>
+          <div class="board-toggles">
+            <label class="toggle-inline" title="Show backend ownership colors clearly on dead cells too">
+              <input id="toggle-shard-map" type="checkbox" checked />
+              <span>Shard Map</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="shard-legend" class="shard-legend"></div>
+
+        <div class="board-wrapper">
+          <div id="board-grid" class="board-grid" role="grid" aria-label="Game of Life board"></div>
+          <div id="board-empty" class="board-empty">
+            Waiting for backend nodes to join the cluster and report Epoch 0…
+          </div>
+        </div>
+
+        <div class="inspector-bar">
+          <span id="cell-inspector">Hover any cell to inspect shard owner · Click any cell to inject <code>DoCrash</code></span>
+        </div>
+
+        <div class="scrubber-bar">
+          <button id="btn-prev-epoch" class="btn btn-xs btn-secondary" title="Previous buffered epoch">◀</button>
+          <input id="epoch-slider" type="range" min="0" max="0" value="0" disabled />
+          <button id="btn-next-epoch" class="btn btn-xs btn-secondary" title="Next buffered epoch">▶</button>
+          <span id="scrubber-label" class="scrubber-label">No snapshots yet</span>
+          <button id="btn-jump-live" class="btn btn-xs btn-primary hidden">Back to Live</button>
+        </div>
+      </div>
+
+      <div class="card log-card">
+        <div class="card-header">
+          <h2>Cluster &amp; Simulation Events</h2>
+          <div class="filter-pills" id="log-filters">
+            <button class="pill active" data-filter="all">All</button>
+            <button class="pill" data-filter="cluster">Cluster</button>
+            <button class="pill" data-filter="crash">Crashes</button>
+            <button class="pill" data-filter="sim">Sim</button>
+            <button class="pill" data-filter="epoch">Epochs</button>
+          </div>
+        </div>
+        <div id="event-log" class="event-log"></div>
+      </div>
+    </section>
+
+    <aside class="sidebar-column">
+      <div class="card">
+        <div class="card-header">
+          <h2>Backend Cluster Nodes</h2>
+          <button id="btn-add-backend" class="btn btn-sm btn-primary">+ Start Backend</button>
+        </div>
+        <p class="card-hint">
+          Each backend runs as an isolated OS child JVM. Use <strong>Stop</strong> for graceful
+          <code>SIGTERM</code> leave or <strong>Kill</strong> for <code>SIGKILL</code> + Split Brain Resolver recovery.
+        </p>
+        <div id="backends-list" class="backends-list"></div>
+        <div id="frontend-node-footer" class="frontend-footer"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Simulation &amp; Chaos</h2>
+        </div>
+        <div class="control-group">
+          <div class="control-row">
+            <label for="tick-slider">Tick Interval</label>
+            <span id="tick-value" class="mono">1000 ms</span>
+          </div>
+          <input id="tick-slider" type="range" min="150" max="4000" step="50" value="1000" />
+        </div>
+
+        <div class="control-group divider-top">
+          <label class="toggle-inline">
+            <input id="toggle-auto-crash" type="checkbox" />
+            <span>Auto-inject random cell crashes</span>
+          </label>
+          <div class="control-row mt-8">
+            <label for="crash-interval">Crash cadence</label>
+            <select id="crash-interval" class="input-sm">
+              <option value="2000">Every 2s</option>
+              <option value="5000" selected>Every 5s</option>
+              <option value="10000">Every 10s</option>
+              <option value="15000">Every 15s</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Board Reset &amp; Patterns</h2>
+        </div>
+        <form id="reset-form" class="reset-form">
+          <div class="form-field">
+            <label for="reset-pattern">Pattern Preset</label>
+            <select id="reset-pattern"></select>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-field">
+              <label for="reset-width">Width (2–40)</label>
+              <input id="reset-width" type="number" min="2" max="40" value="6" required />
+            </div>
+            <div class="form-field">
+              <label for="reset-height">Height (2–30)</label>
+              <input id="reset-height" type="number" min="2" max="30" value="6" required />
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="reset-seed">Random Seed</label>
+            <div class="seed-row">
+              <input id="reset-seed" type="number" value="42" required />
+              <button id="btn-random-seed" type="button" class="btn btn-sm btn-secondary" title="Pick random seed">🎲</button>
+            </div>
+          </div>
+
+          <label class="toggle-inline">
+            <input id="reset-autostart" type="checkbox" />
+            <span>Start ticking immediately after reset</span>
+          </label>
+
+          <button type="submit" class="btn btn-primary btn-full">Apply &amp; Reset Board</button>
+        </form>
+      </div>
+    </aside>
+  </main>
+
+  <div id="logs-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-title">Backend JVM Logs</h3>
+        <div class="modal-actions">
+          <button id="btn-refresh-logs" class="btn btn-xs btn-secondary">↻ Refresh</button>
+          <button id="btn-close-modal" class="btn btn-xs btn-secondary">✕ Close</button>
+        </div>
+      </div>
+      <pre id="modal-log-content" class="modal-log-content"></pre>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

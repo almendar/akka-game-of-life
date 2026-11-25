@@ -17,6 +17,29 @@ A fault-tolerant, distributed implementation of Conway's Game of Life built with
 
 ## Running the Simulation
 
+### Interactive Web UI (Multi-Backend Cluster Manager)
+
+Launch the embedded Web UI, which starts the frontend cluster seed node and spawns isolated child JVM backend processes you can add, gracefully stop (`SIGTERM`), or hard-kill (`SIGKILL`) right from the browser:
+
+```bash
+sbt "runMain gameoflife.RunUI"
+```
+
+Then open [http://localhost:8080](http://localhost:8080).
+
+Optional CLI flags (or environment variables `UI_PORT`, `PEKKO_PORT`, `INITIAL_BACKENDS`):
+
+```bash
+sbt "runMain gameoflife.RunUI --ui-port 8080 --cluster-port 2551 --backends 2"
+```
+
+In the UI you can:
+- **Start / Stop / Kill multiple backend JVMs** and watch Cluster Sharding color-code cells by owning backend and animate shard rebalancing live.
+- **Play, Pause, Resume, Single-Step**, and adjust tick speed on the fly.
+- **Reset the board** across all running backends with custom dimensions, seeds, or pattern presets (`Random`, `Glider`, `Blinker`, `Beacon`, `Pulsar`, `R-pentomino`, `Gosper Glider Gun`).
+- **Click any cell** to inject `DoCrash` (or toggle automatic crash chaos) and watch deterministic history recovery.
+- **Scrub through buffered epochs** (`LIVE` vs `REPLAY`) and inspect live cluster events and per-backend JVM logs.
+
 ### Single-Node (Standalone)
 
 Run a single-JVM cluster node carrying both `frontend` and `backend` roles:
@@ -31,7 +54,7 @@ Watch the board evolve in another terminal:
 tail -f info.log
 ```
 
-### Multi-Node Cluster
+### Multi-Node Cluster (CLI)
 
 1. Start the seed/frontend node on port `2551`:
    ```bash
