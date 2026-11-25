@@ -2,20 +2,20 @@ name := "game-of-life"
 
 version := "1.0"
 
-scalaVersion := "2.11.5"
+scalaVersion := "3.3.4"
 
-resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/"
+val pekkoVersion = "1.1.3"
 
-val akkaDeps : List[ModuleID] = for {
-  artefact <- List("akka-actor", "akka-cluster", "akka-slf4j")
-} yield ("com.typesafe.akka" %% artefact % "2.3.9")
+val pekkoDeps: List[ModuleID] = for {
+  artefact <- List("pekko-actor", "pekko-cluster", "pekko-slf4j", "pekko-serialization-jackson")
+} yield "org.apache.pekko" %% artefact % pekkoVersion
 
+libraryDependencies ++= pekkoDeps
 
-libraryDependencies ++= akkaDeps
+libraryDependencies ++= Seq(
+  "ch.qos.logback" % "logback-classic" % "1.5.12",
+  "org.apache.pekko" %% "pekko-testkit" % pekkoVersion % Test,
+  "org.scalatest" %% "scalatest" % "3.2.19" % Test
+)
 
-libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.0.13"
-
-Revolver.settings
-    
-
-fork in run := true
+run / fork := true

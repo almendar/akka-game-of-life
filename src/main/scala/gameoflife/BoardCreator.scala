@@ -1,10 +1,10 @@
 package gameoflife
 
-import akka.actor._
-import akka.actor.SupervisorStrategy.{Resume, Restart}
-import akka.cluster.{MemberStatus, Cluster, Member}
-import akka.cluster.ClusterEvent._
-import akka.remote.RemoteScope
+import org.apache.pekko.actor._
+import org.apache.pekko.actor.SupervisorStrategy.{Resume, Restart}
+import org.apache.pekko.cluster.{MemberStatus, Cluster, Member}
+import org.apache.pekko.cluster.ClusterEvent._
+import org.apache.pekko.remote.RemoteScope
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.util.Random
@@ -25,13 +25,13 @@ class BoardCreator(boardSize : (Int,Int), simulationParams: SimulationParams ) e
 
   var simulationSteps : Cancellable = null
   var step : Int = 0
-  var howManyCellsHaveICrushed = 0;
+  var howManyCellsHaveICrushed = 0
   var howManyCanICrash = simulationParams.maxNumberOfCrashes
   var cells : Map[Position,ActorRef] = Map.empty
   var nodes : Set[Member] = Set.empty
 
   def getRandomNode : Member = {
-      val size = nodes.size
+    val size = nodes.size
     nodes.drop(Random.nextInt(size)).head
   }
 
@@ -40,7 +40,7 @@ class BoardCreator(boardSize : (Int,Int), simulationParams: SimulationParams ) e
 
 
   override val supervisorStrategy =
-    OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
+    OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1.minute) {
       case _: Exception => Restart
     }
 
@@ -78,7 +78,7 @@ class BoardCreator(boardSize : (Int,Int), simulationParams: SimulationParams ) e
 
   def createAllInitialActors: Unit = {
     generateAllCoordinates(boardSize)
-      .foreach { pos: Position =>
+      .foreach { (pos: Position) =>
       val cell: ActorRef = deplyActorWithPosition(pos)
       context.watch(cell)
       cells = cells + (pos -> cell)
@@ -104,27 +104,27 @@ class BoardCreator(boardSize : (Int,Int), simulationParams: SimulationParams ) e
   override def receive: Receive = {
     case StartSimulation =>
       createAllInitialActors
-      simulationSteps = context.system.scheduler.schedule(simulationParams.startDelay, simulationParams.tick,self, NextStep)
-      context.system.scheduler.schedule(simulationParams.firstErrorAfter,simulationParams.errorEvery){crashIfIMay}
+      simulationSteps = context.system.scheduler.scheduleWithFixedDelay(simulationParams.startDelay, simulationParams.tick, self, NextStep)
+      context.system.scheduler.scheduleWithFixedDelay(simulationParams.firstErrorAfter, simulationParams.errorEvery)(() => crashIfIMay)
     case PauseSimulation =>
       simulationSteps.cancel()
     case ResumeSimulation =>
-      simulationSteps = context.system.scheduler.schedule(simulationParams.startDelay, simulationParams.tick,self, NextStep)
+      simulationSteps = context.system.scheduler.scheduleWithFixedDelay(simulationParams.startDelay, simulationParams.tick, self, NextStep)
     case NextStep =>
       step+=1
       println(s"Epoch: $step")
       cells.foreach{case (poc,ch) => ch ! CellActor.CurrentEpochMsg(step)}
     case SendMeMyNeighbours(position) =>
-      sender ! CellActor.NeighboursRefs(generateNeighbourAddresses(boardSize,position).map(cells(_)))
+      sender() ! CellActor.NeighboursRefs(generateNeighbourAddresses(boardSize,position).map(cells(_)))
 
     case Terminated(actorRef) =>
       onCellTermination(actorRef)
 
     case state: CurrentClusterState =>
-      nodes = nodes ++  state.members.filter(_.status == MemberStatus.up)
+      nodes = nodes ++  state.members.filter(_.status == MemberStatus.Up)
     case MemberUp(member) if(member.hasRole("backend")) =>
       nodes = nodes + member
-    case UnreachableMember(member) if(member.hasRole("backend")) =>
+    case UnreachableMember(member) if(member.hasRole("backend")) => ()
 
     case MemberRemoved(member, previousStatus) if(member.hasRole("backend")) =>
       nodes = nodes - member
@@ -156,12 +156,12 @@ class BoardCreator(boardSize : (Int,Int), simulationParams: SimulationParams ) e
 
 object BoardCreator {
   def props(size : BoardSize,simulationParams: SimulationParams) : Props = Props(classOf[BoardCreator],size,simulationParams)
-  case class CellStateMsg(position:Position, state:CellState,epoch:Epoch)
-  case object StartSimulation
-  case object ResumeSimulation
-  case object PauseSimulation
-  case object NextStep
-  case class SendMeMyNeighbours(position:Position)
+  case class CellStateMsg(position:Position, state:CellState,epoch:Epoch) extends CborSerializable
+  case object StartSimulation extends CborSerializable
+  case object ResumeSimulation extends CborSerializable
+  case object PauseSimulation extends CborSerializable
+  case object NextStep extends CborSerializable
+  case class SendMeMyNeighbours(position:Position) extends CborSerializable
 
 
 }

@@ -1,6 +1,6 @@
 package gameoflife
 
-import akka.actor.{Props, ActorRef, ActorLogging, Actor}
+import org.apache.pekko.actor.{Props, ActorRef, ActorLogging, Actor}
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import NextStateCellGathererActor._
@@ -9,7 +9,7 @@ import NextStateCellGathererActor._
  * Created by tomaszk on 3/9/15.
  */
 
-case class GatheredData(epoch : Epoch, gatheredState : Set[StateForEpoch] = Set.empty, val howManyAnswersShouldThereBe :Int) {
+case class GatheredData(epoch : Epoch, gatheredState : Set[StateForEpoch] = Set.empty, howManyAnswersShouldThereBe :Int) {
 
   def needMore : Boolean = gatheredState.size < howManyAnswersShouldThereBe
 
@@ -19,13 +19,13 @@ case class GatheredData(epoch : Epoch, gatheredState : Set[StateForEpoch] = Set.
 }
 
 class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Set[ActorRef], currentState : CellState ) extends Actor with ActorLogging {
-  var retries = 0;
+  var retries = 0
   var gatheredData :  GatheredData = null
 
   override def preStart(): Unit = {
     gatheredData = GatheredData(epoch = epoch, howManyAnswersShouldThereBe = whoToAsk.size)
     askForValues
-    context.system.scheduler.scheduleOnce(1 seconds,self, Retry)
+    context.system.scheduler.scheduleOnce(1.second, self, Retry)
   }
 
 
@@ -54,7 +54,7 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Set[
       }
       else {
         askForValues
-        context.system.scheduler.scheduleOnce(1 seconds,self, Retry)
+        context.system.scheduler.scheduleOnce(1.second, self, Retry)
       }
   }
 }
@@ -62,7 +62,7 @@ class NextStateCellGathererActor(position : Position, epoch:Epoch, whoToAsk:Set[
 object NextStateCellGathererActor {
   def props(position : Position, epoch:Epoch, whoToAsk:Set[ActorRef], currentState : CellState) =
     Props(classOf[NextStateCellGathererActor],position,epoch,whoToAsk,currentState)
-  case class GatherForEpoch(epoch : Epoch, neighbours : Neighbours)
-  case class StateForEpoch(epoch:Epoch, value:CellState, position : Position)
+  case class GatherForEpoch(epoch : Epoch, neighbours : Neighbours) extends CborSerializable
+  case class StateForEpoch(epoch:Epoch, value:CellState, position : Position) extends CborSerializable
   case object Retry
 }
