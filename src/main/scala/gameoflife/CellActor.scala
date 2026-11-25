@@ -1,6 +1,6 @@
 package gameoflife
 
-import akka.actor._
+import org.apache.pekko.actor._
 
 import scala.util.Random
 
@@ -56,9 +56,9 @@ class CellActor(position:Position, initialState : CellState, val loggerRef:Actor
 
   def receive : Receive = {
     case NeighboursRefs(actors) =>
-      neighboursRefs.foreach(context.unwatch(_))
+      neighboursRefs.foreach(context.unwatch)
       neighboursRefs = actors.toSet
-      neighboursRefs.foreach(context.watch(_))
+      neighboursRefs.foreach(context.watch)
 
     case CurrentEpochMsg(number) =>
       globalEpoch = number
@@ -71,9 +71,9 @@ class CellActor(position:Position, initialState : CellState, val loggerRef:Actor
     case GetStateFromEpoch(epoch) =>
       epochToState.get(epoch) match {
         case Some(state) =>
-          sender ! NextStateCellGathererActor.StateForEpoch(epoch, state, position)
+          sender() ! NextStateCellGathererActor.StateForEpoch(epoch, state, position)
         case None =>
-          enqueuedRequest = (context.actorSelection(sender.path), GetStateFromEpoch(epoch)) :: enqueuedRequest
+          enqueuedRequest = (context.actorSelection(sender().path), GetStateFromEpoch(epoch)) :: enqueuedRequest
       }
 
     case SetNewStateMsg(state, epoch) if previouseEpochWasComputed(epoch, epochToState) => {
@@ -94,7 +94,7 @@ class CellActor(position:Position, initialState : CellState, val loggerRef:Actor
       context.parent ! BoardCreator.SendMeMyNeighbours(position)
     case CellActor.DoCrashMsg =>
         crashThisCell
-    case Terminated(actorRef) =>
+    case Terminated(_) => ()
   }
 
 
@@ -102,13 +102,13 @@ class CellActor(position:Position, initialState : CellState, val loggerRef:Actor
 }
 
 object CellActor {
-  case class CurrentEpochMsg(value:Epoch)
-  case class NeighboursRefs(actors : List[ActorRef])
-  case object GetToNextEpoch
-  case class GetStateFromEpoch(value : Int)
-  case class SetNewStateMsg(state:CellState,epoch:Epoch)
-  case class GetStateForEpochMsg(epoch:Epoch)
-  case object DoCrashMsg
-  case object FailedToGatherInfoMsg
+  case class CurrentEpochMsg(value:Epoch) extends CborSerializable
+  case class NeighboursRefs(actors : List[ActorRef]) extends CborSerializable
+  case object GetToNextEpoch extends CborSerializable
+  case class GetStateFromEpoch(value : Int) extends CborSerializable
+  case class SetNewStateMsg(state:CellState,epoch:Epoch) extends CborSerializable
+  case class GetStateForEpochMsg(epoch:Epoch) extends CborSerializable
+  case object DoCrashMsg extends CborSerializable
+  case object FailedToGatherInfoMsg extends CborSerializable
 
 }

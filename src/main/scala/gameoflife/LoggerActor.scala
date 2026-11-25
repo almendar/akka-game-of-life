@@ -1,6 +1,6 @@
 package gameoflife
 
-import akka.actor._
+import org.apache.pekko.actor._
 import gameoflife.BoardCreator.CellStateMsg
 
 
